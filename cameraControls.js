@@ -7,8 +7,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 export const CameraPresets = {
     WALKING: {
         name: 'Walking Mode',
-        position: new THREE.Vector3(0, 6, -2602), // Start at ground level
-        target: new THREE.Vector3(0, 6, -2500),
+        position: new THREE.Vector3(40, 6, -2590), // 50ft away at an angle from first light
+        target: new THREE.Vector3(0, 4, -2400), // Looking toward the lights at an angle
         fov: 75,
         isWalking: true
     },
