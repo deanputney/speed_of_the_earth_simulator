@@ -9,6 +9,51 @@
 <body>
     <div id="canvas-container"></div>
 
+    <!-- Help Overlay -->
+    <div id="help-overlay" class="help-overlay hidden">
+        <div class="help-content">
+            <div class="help-header">
+                <h2>Keyboard Shortcuts</h2>
+                <button id="close-help" class="close-btn">&times;</button>
+            </div>
+            <div class="help-sections">
+                <div class="help-section">
+                    <h3>Animation</h3>
+                    <div class="shortcut-list">
+                        <div class="shortcut"><kbd>SPACE</kbd><span>Toggle animation on/off</span></div>
+                        <div class="shortcut"><kbd>R</kbd><span>Reset animation</span></div>
+                        <div class="shortcut"><kbd>L</kbd><span>Toggle all lights ON/OFF</span></div>
+                    </div>
+                </div>
+                <div class="help-section">
+                    <h3>Speed Control</h3>
+                    <div class="shortcut-list">
+                        <div class="shortcut"><kbd>↑</kbd> / <kbd>+</kbd><span>Increase speed</span></div>
+                        <div class="shortcut"><kbd>↓</kbd> / <kbd>-</kbd><span>Decrease speed</span></div>
+                        <div class="shortcut"><kbd>1</kbd><span>Real-time speed (1.0x)</span></div>
+                        <div class="shortcut"><kbd>0</kbd><span>Slow motion (0.1x)</span></div>
+                    </div>
+                </div>
+                <div class="help-section">
+                    <h3>Visualization</h3>
+                    <div class="shortcut-list">
+                        <div class="shortcut"><kbd>S</kbd><span>Toggle scale circles (50ft radius)</span></div>
+                        <div class="shortcut"><kbd>I</kbd><span>Display animation info in console</span></div>
+                    </div>
+                </div>
+                <div class="help-section">
+                    <h3>Help</h3>
+                    <div class="shortcut-list">
+                        <div class="shortcut"><kbd>?</kbd><span>Show/hide this help menu</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Button -->
+    <button id="help-button" class="help-button" title="Show keyboard shortcuts (?)">?</button>
+
     <!-- THREE.js CDN -->
     <script type="importmap">
         {

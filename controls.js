@@ -7,7 +7,9 @@ export class AnimationControls {
         this.lightAnimation = lightAnimation;
         this.lights = lights;
         this.scaleCirclesVisible = false;
+        this.helpOverlay = document.getElementById('help-overlay');
         this.setupKeyboardListeners();
+        this.setupHelpUI();
     }
 
     setupKeyboardListeners() {
@@ -76,6 +78,12 @@ export class AnimationControls {
                     // Toggle scale circles
                     this.toggleScaleCircles();
                     break;
+
+                case '?':
+                    // Show help overlay
+                    this.toggleHelp();
+                    event.preventDefault();
+                    break;
             }
         });
 
@@ -90,6 +98,7 @@ export class AnimationControls {
         console.log('L: Toggle all lights ON (for observation)');
         console.log('S: Toggle scale circles (50ft radius)');
         console.log('I: Display animation info');
+        console.log('?: Show keyboard shortcuts menu');
         console.log('========================');
     }
 
@@ -117,5 +126,41 @@ export class AnimationControls {
         console.log(`Cycle duration: ${status.cycleDuration.toFixed(2)}s`);
         console.log(`Cycle progress: ${(status.cycleProgress * 100).toFixed(1)}%`);
         console.log('========================');
+    }
+
+    setupHelpUI() {
+        // Help button click handler
+        const helpButton = document.getElementById('help-button');
+        if (helpButton) {
+            helpButton.addEventListener('click', () => this.toggleHelp());
+        }
+
+        // Close button click handler
+        const closeButton = document.getElementById('close-help');
+        if (closeButton) {
+            closeButton.addEventListener('click', () => this.toggleHelp());
+        }
+
+        // Close on overlay click (but not on content click)
+        if (this.helpOverlay) {
+            this.helpOverlay.addEventListener('click', (e) => {
+                if (e.target === this.helpOverlay) {
+                    this.toggleHelp();
+                }
+            });
+        }
+
+        // Close on Escape key
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !this.helpOverlay.classList.contains('hidden')) {
+                this.toggleHelp();
+            }
+        });
+    }
+
+    toggleHelp() {
+        if (this.helpOverlay) {
+            this.helpOverlay.classList.toggle('hidden');
+        }
     }
 }

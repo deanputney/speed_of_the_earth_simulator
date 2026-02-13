@@ -167,10 +167,10 @@ for (let i = 0; i < NUM_LIGHTS; i++) {
     const light = new THREE.SpotLight(
         0xffffff,  // color
         0,         // intensity (initially off)
-        100,       // distance
+        200,       // distance (increased to ensure full coverage)
         1.49,      // angle (85.4 degrees - creates 100ft circle from 4ft height)
-        0.5,       // penumbra (soft edge)
-        1.5        // decay
+        0.2,       // penumbra (soft edge, reduced for sharper circle)
+        0.2        // decay (further reduced for more even illumination to circle edge)
     );
     light.position.set(0, LIGHT_HEIGHT, z);
     light.target.position.set(0, 0, z); // Point straight down

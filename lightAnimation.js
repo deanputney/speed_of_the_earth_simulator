@@ -28,7 +28,7 @@ export class LightAnimation {
         this.cycleDuration = this.timeBetweenLights * this.lights.length;
 
         // Light intensity settings
-        this.PEAK_INTENSITY = 500; // Maximum light intensity
+        this.PEAK_INTENSITY = 1000; // Maximum light intensity (increased for fuller coverage)
         this.PEAK_OPACITY = 0.8; // Maximum glow sphere opacity
         this.PEAK_BULB_OPACITY = 1.0; // Maximum bulb opacity
     }
