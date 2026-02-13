@@ -1,0 +1,7 @@
+[tasks.dev]
+description = "Start development server with live reload"
+run = "npx live-server --port=8000 --no-browser"
+
+[tasks.serve]
+description = "Start simple Python HTTP server"
+run = "python3 -m http.server 8000"
