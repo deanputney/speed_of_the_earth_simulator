@@ -4,17 +4,23 @@
  */
 
 export class AnimationModeControls {
-    constructor(lightAnimation) {
+    constructor(lightAnimation, container = null) {
         this.lightAnimation = lightAnimation;
+        this.container = container;
         this.createUI();
         this.setupEventListeners();
     }
 
     createUI() {
         // Create control panel container
-        const container = document.createElement('div');
-        container.id = 'animation-mode-controls';
-        container.className = 'mode-controls';
+        let container = this.container;
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'animation-mode-controls';
+            container.className = 'mode-controls';
+            document.body.appendChild(container);
+        }
+        this.container = container;
 
         // Header
         const header = document.createElement('div');
@@ -78,9 +84,6 @@ export class AnimationModeControls {
         pointContainer.appendChild(pointInput);
         pointContainer.appendChild(pointValue);
         container.appendChild(pointContainer);
-
-        // Add to page
-        document.body.appendChild(container);
     }
 
     getModeDescription(modeId) {

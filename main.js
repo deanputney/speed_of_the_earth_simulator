@@ -5,6 +5,7 @@ import { AnimationControls } from './controls.js';
 import { AnimationModeControls } from './animationModeControls.js';
 import { TimeOfDayController } from './timeOfDay.js';
 import { SunControls } from './sunControls.js';
+import { UnifiedControls } from './unifiedControls.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -62,9 +63,6 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
 // Add renderer to DOM
 const container = document.getElementById('canvas-container');
 container.appendChild(renderer.domElement);
-
-// Initialize camera controller
-const cameraController = new CameraController(camera, renderer);
 
 // Create desert ground texture
 function createDesertTexture() {
@@ -232,14 +230,27 @@ const lightAnimation = new LightAnimation(lights, glowSpheres);
 // Initialize animation controls for demonstration (pass lights for scale circle toggle)
 const animationControls = new AnimationControls(lightAnimation, lights);
 
-// Initialize animation mode controls
-const animationModeControls = new AnimationModeControls(lightAnimation);
+// Create unified controls panel
+const unifiedControls = new UnifiedControls();
+
+// Initialize camera controller with its tab container
+const cameraController = new CameraController(camera, renderer);
+cameraController.createUI(unifiedControls.getTabContainer('camera'));
+
+// Initialize animation mode controls in its tab
+const animationModeControls = new AnimationModeControls(
+    lightAnimation,
+    unifiedControls.getTabContainer('animation')
+);
 
 // Initialize time of day controller with skybox and lighting presets
 const timeOfDayController = new TimeOfDayController(scene, ambientLight, directionalLight);
 
-// Initialize sun position controls
-const sunControls = new SunControls(directionalLight);
+// Initialize sun position controls in lighting tab
+const sunControls = new SunControls(
+    directionalLight,
+    unifiedControls.getTabContainer('lighting')
+);
 
 // Link sun controls to time of day controller
 timeOfDayController.sunControls = sunControls;

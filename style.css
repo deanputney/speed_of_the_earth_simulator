@@ -24,19 +24,116 @@ canvas {
     height: 100%;
 }
 
-/* Camera Controls UI */
-#camera-controls {
+/* Unified Controls Panel */
+.unified-controls {
     position: fixed;
-    top: 20px;
+    bottom: 20px;
     right: 20px;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
-    padding: 15px;
     color: white;
     z-index: 1000;
-    min-width: 200px;
+    min-width: 320px;
+    max-width: 400px;
     backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    transition: all 0.3s ease;
+}
+
+.unified-controls.collapsed .controls-body {
+    display: none;
+}
+
+.controls-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    user-select: none;
+}
+
+.controls-title {
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.controls-toggle {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    color: white;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.controls-toggle:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+.controls-body {
+    display: block;
+}
+
+.controls-tabs {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.tab-btn.active {
+    color: rgba(76, 175, 80, 1);
+    border-bottom-color: rgba(76, 175, 80, 1);
+    background: rgba(76, 175, 80, 0.1);
+}
+
+.controls-content {
+    padding: 15px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Camera Controls UI (legacy - will be moved to tab) */
+#camera-controls {
+    display: none !important;
 }
 
 .controls-header {
@@ -231,19 +328,9 @@ canvas {
     color: rgba(255, 255, 255, 0.8);
 }
 
-/* Animation Mode Controls */
+/* Animation Mode Controls (legacy - will be moved to tab) */
 .mode-controls {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    background: rgba(0, 0, 0, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    padding: 15px;
-    color: white;
-    z-index: 1000;
-    min-width: 250px;
-    backdrop-filter: blur(10px);
+    display: none !important;
 }
 
 .mode-select-container {
@@ -309,4 +396,47 @@ canvas {
     color: rgba(76, 175, 80, 1);
     min-width: 25px;
     text-align: right;
+}
+
+/* Tab Content Styling */
+.tab-content .controls-header {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.tab-content .controls-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tab-content .controls-info {
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+.tab-content .mode-select-container {
+    margin-bottom: 10px;
+}
+
+.tab-content .mode-description {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+    margin-top: 5px;
+    line-height: 1.4;
+}
+
+.tab-content .point-selector-container {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
 }

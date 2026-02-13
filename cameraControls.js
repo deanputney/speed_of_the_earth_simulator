@@ -81,11 +81,16 @@ export class CameraController {
         this.controls.zoomToCursor = true; // Zoom toward mouse cursor position
     }
 
-    createUI() {
-        // Create camera controls container
-        const controlsDiv = document.createElement('div');
-        controlsDiv.id = 'camera-controls';
-        controlsDiv.innerHTML = `
+    createUI(container = null) {
+        // If no container provided, create standalone (legacy)
+        if (!container) {
+            const controlsDiv = document.createElement('div');
+            controlsDiv.id = 'camera-controls';
+            container = controlsDiv;
+            document.body.appendChild(controlsDiv);
+        }
+
+        container.innerHTML = `
             <div class="controls-header">Camera Views</div>
             <div class="controls-buttons">
                 ${Object.entries(CameraPresets).map(([key, preset]) => `
@@ -97,10 +102,9 @@ export class CameraController {
                 Left: Rotate | Right: Pan | Scroll: Zoom</small>
             </div>
         `;
-        document.body.appendChild(controlsDiv);
 
         // Add event listeners
-        const buttons = controlsDiv.querySelectorAll('.camera-btn');
+        const buttons = container.querySelectorAll('.camera-btn');
         buttons.forEach(btn => {
             btn.addEventListener('click', () => {
                 const preset = btn.dataset.preset;
@@ -113,7 +117,7 @@ export class CameraController {
         });
 
         // Set initial active button
-        const elevatedBtn = controlsDiv.querySelector('[data-preset="ELEVATED"]');
+        const elevatedBtn = container.querySelector('[data-preset="ELEVATED"]');
         if (elevatedBtn) elevatedBtn.classList.add('active');
     }
 
