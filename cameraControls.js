@@ -5,6 +5,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Scale: 1 THREE.js unit = 1 foot
 // Installation is ~5104 feet long, centered at origin (from -2552 to 2552)
 export const CameraPresets = {
+    WALKING: {
+        name: 'Walking Mode',
+        position: new THREE.Vector3(0, 6, -2602), // Start at ground level
+        target: new THREE.Vector3(0, 6, -2500),
+        fov: 75,
+        isWalking: true
+    },
     GROUND: {
         name: 'Ground Start',
         position: new THREE.Vector3(0, 6, -2602), // 50 feet before start, 6 feet high
@@ -63,8 +70,17 @@ export class CameraController {
         this.isFollowingWave = false;
         this.wavePosition = 0;
 
+        // Walking mode state
+        this.isWalkingMode = false;
+        this.walkSpeed = 50; // feet per second
+        this.moveState = { forward: false, backward: false, left: false, right: false };
+        this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        this.velocity = new THREE.Vector3();
+        this.direction = new THREE.Vector3();
+
         this.initControls();
         this.createUI();
+        this.setupWalkingControls();
 
         // Set default view to elevated
         this.setPreset('ELEVATED', false);
@@ -121,12 +137,73 @@ export class CameraController {
         if (elevatedBtn) elevatedBtn.classList.add('active');
     }
 
+    setupWalkingControls() {
+        // Keyboard controls for WASD
+        document.addEventListener('keydown', (e) => {
+            if (!this.isWalkingMode) return;
+
+            switch (e.key.toLowerCase()) {
+                case 'w': this.moveState.forward = true; break;
+                case 's': this.moveState.backward = true; break;
+                case 'a': this.moveState.left = true; break;
+                case 'd': this.moveState.right = true; break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (!this.isWalkingMode) return;
+
+            switch (e.key.toLowerCase()) {
+                case 'w': this.moveState.forward = false; break;
+                case 's': this.moveState.backward = false; break;
+                case 'a': this.moveState.left = false; break;
+                case 'd': this.moveState.right = false; break;
+            }
+        });
+
+        // Mouse look controls with pointer lock
+        this.renderer.domElement.addEventListener('click', () => {
+            if (this.isWalkingMode) {
+                this.renderer.domElement.requestPointerLock();
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!this.isWalkingMode || document.pointerLockElement !== this.renderer.domElement) return;
+
+            const sensitivity = 0.002;
+            this.euler.setFromQuaternion(this.camera.quaternion);
+            this.euler.y -= e.movementX * sensitivity;
+            this.euler.x -= e.movementY * sensitivity;
+            this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
+            this.camera.quaternion.setFromEuler(this.euler);
+        });
+
+        // Exit pointer lock on ESC
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement !== this.renderer.domElement && this.isWalkingMode) {
+                console.log('Click canvas to enable mouse look');
+            }
+        });
+    }
+
     setPreset(presetKey, animate = true) {
         const preset = CameraPresets[presetKey];
         if (!preset) return;
 
         this.currentPreset = presetKey;
         this.isFollowingWave = preset.isFollowing || false;
+        this.isWalkingMode = preset.isWalking || false;
+
+        // Enable/disable orbit controls based on mode
+        if (this.isWalkingMode) {
+            this.controls.enabled = false;
+            document.exitPointerLock();
+            console.log('Walking mode: Use WASD to move, click to enable mouse look');
+        } else {
+            this.controls.enabled = true;
+            document.exitPointerLock();
+        }
 
         if (animate && !this.isTransitioning) {
             // Start transition
@@ -198,7 +275,39 @@ export class CameraController {
             this.controls.target.set(0, 4, this.wavePosition);
         }
 
-        this.controls.update();
+        // Handle walking mode
+        if (this.isWalkingMode && !this.isTransitioning) {
+            const speed = this.walkSpeed * deltaTime;
+
+            // Get camera direction
+            this.direction.set(0, 0, 0);
+
+            if (this.moveState.forward) this.direction.z -= 1;
+            if (this.moveState.backward) this.direction.z += 1;
+            if (this.moveState.left) this.direction.x -= 1;
+            if (this.moveState.right) this.direction.x += 1;
+
+            // Normalize diagonal movement
+            if (this.direction.length() > 0) {
+                this.direction.normalize();
+            }
+
+            // Apply camera rotation to movement direction
+            this.direction.applyQuaternion(this.camera.quaternion);
+            this.direction.y = 0; // Keep movement horizontal
+            this.direction.normalize();
+
+            // Update position
+            this.velocity.copy(this.direction).multiplyScalar(speed);
+            this.camera.position.add(this.velocity);
+
+            // Keep at ground level
+            this.camera.position.y = 6;
+        }
+
+        if (!this.isWalkingMode) {
+            this.controls.update();
+        }
     }
 
     onWindowResize() {
