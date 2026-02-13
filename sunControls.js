@@ -4,8 +4,9 @@
  */
 
 export class SunControls {
-    constructor(directionalLight) {
+    constructor(directionalLight, container = null) {
         this.light = directionalLight;
+        this.container = container;
 
         // Sun position in spherical coordinates
         this.distance = 1500; // Distance from origin
@@ -17,22 +18,27 @@ export class SunControls {
     }
 
     createUI() {
-        const container = document.createElement('div');
-        container.id = 'sun-controls';
-        container.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            z-index: 1000;
-            min-width: 250px;
-        `;
+        let container = this.container;
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'sun-controls';
+            container.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(0, 0, 0, 0.7);
+                backdrop-filter: blur(10px);
+                padding: 15px;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                color: white;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                z-index: 1000;
+                min-width: 250px;
+            `;
+            document.body.appendChild(container);
+        }
+        this.container = container;
 
         container.innerHTML = `
             <div style="font-size: 11px; font-weight: 600; margin-bottom: 12px; letter-spacing: 1px;">
@@ -82,8 +88,6 @@ export class SunControls {
                 Drag sliders to adjust sun position and lighting
             </div>
         `;
-
-        document.body.appendChild(container);
 
         // Add event listeners
         const azimuthSlider = document.getElementById('azimuth-slider');

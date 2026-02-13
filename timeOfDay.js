@@ -49,17 +49,6 @@ export class TimeOfDayController {
                 sunAzimuth: 45,         // Northeast
                 sunElevation: 60        // High in sky
             },
-            'dusk': {
-                name: 'Dusk',
-                skyColor: 0x1e3a5f,
-                horizonColor: 0xff6347,
-                ambientColor: 0xff8866,
-                ambientIntensity: 0.25,  // Dim
-                sunColor: 0xff7744,
-                sunIntensity: 1.8,
-                sunAzimuth: 270,    // West (sunset)
-                sunElevation: 8     // Just above horizon
-            },
             'golden-hour': {
                 name: 'Golden Hour',
                 skyColor: 0xff9a56,
@@ -70,6 +59,17 @@ export class TimeOfDayController {
                 sunIntensity: 2.0,
                 sunAzimuth: 280,    // West-northwest
                 sunElevation: 15    // Low angle for golden light
+            },
+            'dusk': {
+                name: 'Dusk',
+                skyColor: 0x1e3a5f,
+                horizonColor: 0xff6347,
+                ambientColor: 0xff8866,
+                ambientIntensity: 0.25,  // Dim
+                sunColor: 0xff7744,
+                sunIntensity: 1.8,
+                sunAzimuth: 270,    // West (sunset)
+                sunElevation: 8     // Just above horizon
             }
         };
 
