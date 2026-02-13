@@ -227,6 +227,19 @@ export class CameraController {
             this.camera.fov = preset.fov;
             this.camera.updateProjectionMatrix();
             this.controls.update();
+
+            // If entering walking mode, set initial look direction
+            if (this.isWalkingMode) {
+                const lookDirection = new THREE.Vector3();
+                lookDirection.subVectors(preset.target, preset.position).normalize();
+
+                // Calculate euler angles from look direction
+                this.euler.y = Math.atan2(lookDirection.x, -lookDirection.z);
+                this.euler.x = Math.asin(lookDirection.y);
+                this.euler.z = 0;
+
+                this.camera.quaternion.setFromEuler(this.euler);
+            }
         }
     }
 
@@ -258,6 +271,19 @@ export class CameraController {
 
             if (this.transitionProgress >= 1) {
                 this.isTransitioning = false;
+
+                // If entering walking mode, set initial look direction
+                if (this.isWalkingMode) {
+                    const lookDirection = new THREE.Vector3();
+                    lookDirection.subVectors(this.transitionToTarget, this.camera.position).normalize();
+
+                    // Calculate euler angles from look direction
+                    this.euler.y = Math.atan2(lookDirection.x, -lookDirection.z);
+                    this.euler.x = Math.asin(lookDirection.y);
+                    this.euler.z = 0;
+
+                    this.camera.quaternion.setFromEuler(this.euler);
+                }
             }
         }
 
