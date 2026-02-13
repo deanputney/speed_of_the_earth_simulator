@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CameraController } from './cameraControls.js';
 import { LightAnimation } from './lightAnimation.js';
 import { AnimationControls } from './controls.js';
+import { AnimationModeControls } from './animationModeControls.js';
 import { TimeOfDayController } from './timeOfDay.js';
 import { SunControls } from './sunControls.js';
 
@@ -230,6 +231,9 @@ const lightAnimation = new LightAnimation(lights, glowSpheres);
 
 // Initialize animation controls for demonstration (pass lights for scale circle toggle)
 const animationControls = new AnimationControls(lightAnimation, lights);
+
+// Initialize animation mode controls
+const animationModeControls = new AnimationModeControls(lightAnimation);
 
 // Initialize time of day controller with skybox and lighting presets
 const timeOfDayController = new TimeOfDayController(scene, ambientLight, directionalLight);
