@@ -27,7 +27,7 @@ canvas {
 /* Unified Controls Panel */
 .unified-controls {
     position: fixed;
-    bottom: 20px;
+    top: 20px;
     right: 20px;
     background: rgba(0, 0, 0, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.2);
