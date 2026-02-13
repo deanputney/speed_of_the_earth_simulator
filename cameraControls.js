@@ -7,7 +7,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 export const CameraPresets = {
     GROUND: {
         name: 'Ground Start',
-        position: new THREE.Vector3(0, 8, -2552), // At the start of installation, 8 feet high
+        position: new THREE.Vector3(0, 6, -2602), // 50 feet before start, 6 feet high
         target: new THREE.Vector3(0, 4, 2552), // Looking down the entire row to the end
         fov: 75
     },
