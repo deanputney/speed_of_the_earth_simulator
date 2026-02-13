@@ -1,0 +1,16 @@
+# Playwright MCP logs and cache
+.playwright-mcp/
+
+# Node modules (if we add any dependencies)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
