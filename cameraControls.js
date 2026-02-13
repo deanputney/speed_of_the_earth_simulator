@@ -78,6 +78,13 @@ export class CameraController {
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
 
+        // Jump state
+        this.isJumping = false;
+        this.verticalVelocity = 0;
+        this.jumpSpeed = 30; // feet per second
+        this.gravity = 60; // feet per second squared
+        this.groundLevel = 6;
+
         this.initControls();
         this.createUI();
         this.setupWalkingControls();
@@ -138,7 +145,7 @@ export class CameraController {
     }
 
     setupWalkingControls() {
-        // Keyboard controls for WASD
+        // Keyboard controls for WASD and jump
         document.addEventListener('keydown', (e) => {
             if (!this.isWalkingMode) return;
 
@@ -147,6 +154,14 @@ export class CameraController {
                 case 's': this.moveState.backward = true; break;
                 case 'a': this.moveState.left = true; break;
                 case 'd': this.moveState.right = true; break;
+                case ' ':
+                    // Jump with spacebar
+                    if (!this.isJumping) {
+                        this.isJumping = true;
+                        this.verticalVelocity = this.jumpSpeed;
+                        e.preventDefault();
+                    }
+                    break;
             }
         });
 
@@ -327,8 +342,21 @@ export class CameraController {
             this.velocity.copy(this.direction).multiplyScalar(speed);
             this.camera.position.add(this.velocity);
 
-            // Keep at ground level
-            this.camera.position.y = 6;
+            // Handle jumping and gravity
+            if (this.isJumping || this.camera.position.y > this.groundLevel) {
+                this.verticalVelocity -= this.gravity * deltaTime;
+                this.camera.position.y += this.verticalVelocity * deltaTime;
+
+                // Land on ground
+                if (this.camera.position.y <= this.groundLevel) {
+                    this.camera.position.y = this.groundLevel;
+                    this.isJumping = false;
+                    this.verticalVelocity = 0;
+                }
+            } else {
+                // Keep at ground level
+                this.camera.position.y = this.groundLevel;
+            }
         }
 
         if (!this.isWalkingMode) {

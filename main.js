@@ -3,6 +3,7 @@ import { CameraController } from './cameraControls.js';
 import { LightAnimation } from './lightAnimation.js';
 import { AnimationControls } from './controls.js';
 import { AnimationModeControls } from './animationModeControls.js';
+import { DisplayControls } from './displayControls.js';
 import { TimeOfDayController } from './timeOfDay.js';
 import { SunControls } from './sunControls.js';
 import { UnifiedControls } from './unifiedControls.js';
@@ -227,8 +228,8 @@ for (let i = 0; i < NUM_LIGHTS; i++) {
 // Initialize light animation system
 const lightAnimation = new LightAnimation(lights, glowSpheres);
 
-// Initialize animation controls for demonstration (pass lights for scale circle toggle)
-const animationControls = new AnimationControls(lightAnimation, lights);
+// Initialize animation controls for demonstration
+const animationControls = new AnimationControls(lightAnimation);
 
 // Create unified controls panel
 const unifiedControls = new UnifiedControls();
@@ -241,6 +242,12 @@ cameraController.createUI(unifiedControls.getTabContainer('camera'));
 const animationModeControls = new AnimationModeControls(
     lightAnimation,
     unifiedControls.getTabContainer('animation')
+);
+
+// Initialize display controls in display tab
+const displayControls = new DisplayControls(
+    lights,
+    unifiedControls.getTabContainer('display')
 );
 
 // Initialize time of day controller with skybox and lighting presets

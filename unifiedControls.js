@@ -28,6 +28,7 @@ export class UnifiedControls {
                     <button class="tab-btn active" data-tab="camera">Camera</button>
                     <button class="tab-btn" data-tab="animation">Animation</button>
                     <button class="tab-btn" data-tab="lighting">Lighting</button>
+                    <button class="tab-btn" data-tab="display">Display</button>
                 </div>
                 <div class="controls-content">
                     <div id="tab-camera" class="tab-content active">
@@ -38,6 +39,9 @@ export class UnifiedControls {
                     </div>
                     <div id="tab-lighting" class="tab-content">
                         <!-- Sun/time of day controls will be inserted here -->
+                    </div>
+                    <div id="tab-display" class="tab-content">
+                        <!-- Display options will be inserted here -->
                     </div>
                 </div>
             </div>

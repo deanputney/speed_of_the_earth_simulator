@@ -3,10 +3,8 @@
  */
 
 export class AnimationControls {
-    constructor(lightAnimation, lights) {
+    constructor(lightAnimation) {
         this.lightAnimation = lightAnimation;
-        this.lights = lights;
-        this.scaleCirclesVisible = false;
         this.helpOverlay = document.getElementById('help-overlay');
         this.setupKeyboardListeners();
         this.setupHelpUI();
@@ -74,11 +72,6 @@ export class AnimationControls {
                     console.log(`All lights ${allLightsStatus ? 'OFF (animation mode)' : 'ON (observation mode)'}`);
                     break;
 
-                case 's':
-                    // Toggle scale circles
-                    this.toggleScaleCircles();
-                    break;
-
                 case '?':
                     // Show help overlay
                     this.toggleHelp();
@@ -96,23 +89,9 @@ export class AnimationControls {
         console.log('1: Real-time speed (1.0x)');
         console.log('0: Slow motion (0.1x)');
         console.log('L: Toggle all lights ON (for observation)');
-        console.log('S: Toggle scale circles (50ft radius)');
         console.log('I: Display animation info');
         console.log('?: Show keyboard shortcuts menu');
         console.log('========================');
-    }
-
-    toggleScaleCircles() {
-        this.scaleCirclesVisible = !this.scaleCirclesVisible;
-
-        // Toggle visibility of all scale circles
-        this.lights.forEach(light => {
-            if (light.userData.scaleCircle) {
-                light.userData.scaleCircle.visible = this.scaleCirclesVisible;
-            }
-        });
-
-        console.log(`Scale circles ${this.scaleCirclesVisible ? 'ON' : 'OFF'} (50ft radius)`);
     }
 
     displayInfo() {
