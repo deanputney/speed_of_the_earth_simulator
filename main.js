@@ -7,6 +7,7 @@ import { DisplayControls } from './displayControls.js';
 import { TimeOfDayController } from './timeOfDay.js';
 import { SunControls } from './sunControls.js';
 import { UnifiedControls } from './unifiedControls.js';
+import { LightControls } from './lightControls.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -262,6 +263,13 @@ const sunControls = new SunControls(
 // Link sun controls to time of day controller
 timeOfDayController.sunControls = sunControls;
 
+// Initialize light brightness controls in lighting tab
+const lightControls = new LightControls(
+    lights,
+    lightAnimation,
+    unifiedControls.getTabContainer('lighting')
+);
+
 // Window resize handling
 function onWindowResize() {
     cameraController.onWindowResize();
@@ -295,5 +303,5 @@ function animate() {
 // Start the animation loop
 animate();
 
-// Export scene, camera, renderer, lights, cameraController, and lightAnimation for use by other modules
-export { scene, camera, renderer, lights, glowSpheres, cameraController, lightAnimation };
+// Export scene, camera, renderer, lights, cameraController, lightAnimation, and lightControls for use by other modules
+export { scene, camera, renderer, lights, glowSpheres, cameraController, lightAnimation, lightControls };
