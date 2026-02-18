@@ -37,8 +37,8 @@ export class LightControls {
                 </div>
             </div>
 
-            <div style="margin-bottom: 12px;">
-                <button id="brightness-preset-btn" style="
+            <div style="margin-bottom: 8px;">
+                <button id="brightness-preset-dim-btn" style="
                     width: 100%;
                     padding: 8px;
                     background: rgba(76, 175, 80, 0.2);
@@ -48,9 +48,24 @@ export class LightControls {
                     font-size: 12px;
                     cursor: pointer;
                     transition: all 0.2s;
+                    margin-bottom: 8px;
                 " onmouseover="this.style.background='rgba(76, 175, 80, 0.3)'"
                    onmouseout="this.style.background='rgba(76, 175, 80, 0.2)'">
                     Set to 6000 (Dim Mode)
+                </button>
+                <button id="brightness-preset-bright-btn" style="
+                    width: 100%;
+                    padding: 8px;
+                    background: rgba(255, 193, 7, 0.2);
+                    border: 1px solid rgba(255, 193, 7, 0.5);
+                    border-radius: 4px;
+                    color: #FFC107;
+                    font-size: 12px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                " onmouseover="this.style.background='rgba(255, 193, 7, 0.3)'"
+                   onmouseout="this.style.background='rgba(255, 193, 7, 0.2)'">
+                    Set to 200000 (Bright Mode)
                 </button>
             </div>
 
@@ -76,7 +91,8 @@ export class LightControls {
         // Add event listeners
         const brightnessSlider = document.getElementById('brightness-slider');
         const distanceSlider = document.getElementById('distance-slider');
-        const presetBtn = document.getElementById('brightness-preset-btn');
+        const presetDimBtn = document.getElementById('brightness-preset-dim-btn');
+        const presetBrightBtn = document.getElementById('brightness-preset-bright-btn');
 
         const brightnessValue = document.getElementById('brightness-value');
         const distanceValue = document.getElementById('distance-value');
@@ -93,9 +109,16 @@ export class LightControls {
             this.updateLightProperties();
         });
 
-        presetBtn.addEventListener('click', () => {
+        presetDimBtn.addEventListener('click', () => {
             this.brightness = 6000;
             brightnessSlider.value = 6000;
+            brightnessValue.textContent = this.brightness.toLocaleString();
+            this.updateLightProperties();
+        });
+
+        presetBrightBtn.addEventListener('click', () => {
+            this.brightness = 200000;
+            brightnessSlider.value = 200000;
             brightnessValue.textContent = this.brightness.toLocaleString();
             this.updateLightProperties();
         });
