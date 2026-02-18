@@ -139,15 +139,20 @@ export class SunControls {
         this.azimuth = azimuth;
         this.elevation = elevation;
 
-        // Update sliders
-        document.getElementById('azimuth-slider').value = azimuth;
-        document.getElementById('elevation-slider').value = elevation;
-        document.getElementById('intensity-slider').value = intensity;
+        // Update sliders (if they exist in DOM)
+        const azimuthSlider = document.getElementById('azimuth-slider');
+        const elevationSlider = document.getElementById('elevation-slider');
+        const intensitySlider = document.getElementById('intensity-slider');
+        const azimuthValue = document.getElementById('azimuth-value');
+        const elevationValue = document.getElementById('elevation-value');
+        const intensityValue = document.getElementById('intensity-value');
 
-        // Update displays
-        document.getElementById('azimuth-value').textContent = `${azimuth}°`;
-        document.getElementById('elevation-value').textContent = `${elevation}°`;
-        document.getElementById('intensity-value').textContent = intensity.toFixed(1);
+        if (azimuthSlider) azimuthSlider.value = azimuth;
+        if (elevationSlider) elevationSlider.value = elevation;
+        if (intensitySlider) intensitySlider.value = intensity;
+        if (azimuthValue) azimuthValue.textContent = `${azimuth}°`;
+        if (elevationValue) elevationValue.textContent = `${elevation}°`;
+        if (intensityValue) intensityValue.textContent = intensity.toFixed(1);
 
         this.light.intensity = intensity;
         this.updateLightPosition();

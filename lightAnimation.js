@@ -6,9 +6,10 @@
  */
 
 export class LightAnimation {
-    constructor(lights, glowSpheres) {
+    constructor(lights, glowSpheres, timeOfDayController = null) {
         this.lights = lights;
         this.glowSpheres = glowSpheres;
+        this.timeOfDayController = timeOfDayController;
 
         // Physical constants
         this.EARTH_ROTATION_SPEED = 1156; // feet per second at Burning Man latitude
@@ -86,6 +87,12 @@ export class LightAnimation {
                 break;
             case 'diverge-point':
                 this.updateDivergePoint();
+                break;
+            case 'brightness-burst':
+                this.updateBrightnessBurst();
+                break;
+            case 'brightness-burst-realtime':
+                this.updateBrightnessBurstRealtime();
                 break;
             default:
                 this.updateSequential();
@@ -359,6 +366,109 @@ export class LightAnimation {
     }
 
     /**
+     * Brightness Burst: 5 dim cycles (6000) followed by 3 bright cycles (200000)
+     */
+    updateBrightnessBurst() {
+        // Initialize mode state
+        if (!this.modeState.cycleCount) {
+            this.modeState.cycleCount = 0;
+            this.modeState.lastCycleTime = 0;
+        }
+
+        const cycleTime = this.currentTime % this.cycleDuration;
+
+        // Detect cycle completion and update brightness
+        if (cycleTime < this.modeState.lastCycleTime) {
+            // Cycle just completed
+            this.modeState.cycleCount++;
+
+            // After 5 dim cycles + 3 bright cycles = 8 total, reset to 0
+            if (this.modeState.cycleCount >= 8) {
+                this.modeState.cycleCount = 0;
+            }
+
+            // Set brightness based on cycle count
+            if (this.modeState.cycleCount < 5) {
+                // First 5 cycles: dim (6000 in UI = 30 internal)
+                this.PEAK_INTENSITY = 30;
+            } else {
+                // Next 3 cycles: bright (200000 in UI = 1000 internal)
+                this.PEAK_INTENSITY = 1000;
+            }
+        }
+
+        this.modeState.lastCycleTime = cycleTime;
+
+        // Run sequential animation with current brightness
+        for (let i = 0; i < this.lights.length; i++) {
+            const lightFlashTime = i * this.timeBetweenLights;
+            let timeDiff = cycleTime - lightFlashTime;
+
+            if (timeDiff < 0) {
+                timeDiff += this.cycleDuration;
+            }
+
+            const flash = this.calculateFlashIntensity(timeDiff);
+            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
+        }
+    }
+
+    /**
+     * Brightness Burst (Realtime): Every 15 minutes, do 3 bright bursts, otherwise dim
+     */
+    updateBrightnessBurstRealtime() {
+        // Initialize mode state with real time tracking
+        if (!this.modeState.realtimeStartTime) {
+            this.modeState.realtimeStartTime = Date.now();
+            this.modeState.lastBurstCycleCount = 0;
+        }
+
+        // Calculate time since mode started
+        const elapsedMs = Date.now() - this.modeState.realtimeStartTime;
+        const elapsedMinutes = elapsedMs / (1000 * 60);
+
+        // 15-minute cycle: determine if we're in burst period
+        const cyclePosition = elapsedMinutes % 15;
+
+        // Calculate how many full animation cycles have completed in the current burst
+        const cycleTime = this.currentTime % this.cycleDuration;
+        if (cycleTime < this.modeState.lastCycleTime) {
+            // Cycle completed
+            if (cyclePosition < 0.5) {
+                // We're in the first 30 seconds of the 15-minute window (burst period)
+                this.modeState.lastBurstCycleCount++;
+            } else {
+                // Reset burst count when we're outside the burst period
+                this.modeState.lastBurstCycleCount = 0;
+            }
+        }
+        this.modeState.lastCycleTime = cycleTime;
+
+        // Determine brightness: bright for first 3 cycles every 15 minutes, dim otherwise
+        // First 30 seconds of each 15-minute period = burst time
+        if (cyclePosition < 0.5 && this.modeState.lastBurstCycleCount < 3) {
+            // Bright burst (200000 in UI = 1000 internal)
+            this.PEAK_INTENSITY = 1000;
+        } else {
+            // Dim (6000 in UI = 30 internal)
+            this.PEAK_INTENSITY = 30;
+        }
+
+        // Run sequential animation with current brightness
+        for (let i = 0; i < this.lights.length; i++) {
+            const lightFlashTime = i * this.timeBetweenLights;
+            let timeDiff = cycleTime - lightFlashTime;
+
+            if (timeDiff < 0) {
+                timeDiff += this.cycleDuration;
+            }
+
+            const flash = this.calculateFlashIntensity(timeDiff);
+            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
+        }
+    }
+
+    /**
      * Set the animation speed multiplier
      * @param {number} multiplier - Speed multiplier (1.0 = real-time, 0.5 = half speed, 2.0 = double speed)
      */
@@ -413,6 +523,11 @@ export class LightAnimation {
         this.animationMode = mode;
         this.currentTime = 0; // Reset time when changing modes
         this.modeState = {}; // Clear mode-specific state
+
+        // Set time to night for brightness-burst modes
+        if ((mode === 'brightness-burst' || mode === 'brightness-burst-realtime') && this.timeOfDayController) {
+            this.timeOfDayController.applyPreset('night');
+        }
     }
 
     /**
@@ -467,7 +582,9 @@ export class LightAnimation {
             { id: 'converge-center', name: 'Converge Center', description: 'Both ends to middle' },
             { id: 'converge-point', name: 'Converge Point', description: 'Both ends to specific point' },
             { id: 'diverge-center', name: 'Diverge Center', description: 'Middle outward' },
-            { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' }
+            { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' },
+            { id: 'brightness-burst', name: 'Brightness Burst', description: '5 dim cycles, then 3 bright cycles (night mode)' },
+            { id: 'brightness-burst-realtime', name: 'Brightness Burst (Realtime)', description: '3 bright bursts every 15 minutes (night mode)' }
         ];
     }
 

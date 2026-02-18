@@ -254,6 +254,9 @@ const displayControls = new DisplayControls(
 // Initialize time of day controller with skybox and lighting presets
 const timeOfDayController = new TimeOfDayController(scene, ambientLight, directionalLight);
 
+// Link time of day controller to light animation for brightness-burst mode
+lightAnimation.timeOfDayController = timeOfDayController;
+
 // Initialize sun position controls in lighting tab
 const sunControls = new SunControls(
     directionalLight,
