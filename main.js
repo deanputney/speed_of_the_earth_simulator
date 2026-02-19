@@ -322,6 +322,27 @@ function parseURLParameters() {
             }
             // Auto-select the animation tab
             unifiedControls.switchTab('animation');
+
+            // Show/hide point selector based on mode
+            const pointContainer = document.getElementById('point-selector-container');
+            if (pointContainer) {
+                if (mode === 'converge-point' || mode === 'diverge-point') {
+                    pointContainer.classList.remove('hidden');
+                } else {
+                    pointContainer.classList.add('hidden');
+                }
+            }
+
+            // Show/hide brightness controls based on mode
+            const brightnessContainer = document.getElementById('brightness-controls-container');
+            if (brightnessContainer) {
+                if (mode === 'brightness-burst' || mode === 'brightness-burst-realtime') {
+                    brightnessContainer.classList.remove('hidden');
+                } else {
+                    brightnessContainer.classList.add('hidden');
+                }
+            }
+
             console.log(`📍 URL: Set animation mode to "${mode}"`);
         } else {
             console.warn(`⚠️ URL: Invalid animation mode "${mode}"`);
