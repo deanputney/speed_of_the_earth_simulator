@@ -555,10 +555,9 @@ export class LightAnimation {
 
         // Update countdown timer in mode description
         if (this.animationModeControls) {
-            const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
             const statusText = this.PEAK_INTENSITY === this.highBrightness / 200 ?
-                `BRIGHT - Next burst in: ${countdownText} (${nextQuarterText}) - ${currentTime}` :
-                `DIM - Next burst in: ${countdownText} (${nextQuarterText}) - ${currentTime}`;
+                `BRIGHT - Next burst in: ${countdownText} (${nextQuarterText})` :
+                `DIM - Next burst in: ${countdownText} (${nextQuarterText})`;
             this.animationModeControls.updateModeDescription(statusText);
         }
 
