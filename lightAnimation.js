@@ -10,6 +10,8 @@ export class LightAnimation {
         this.lights = lights;
         this.glowSpheres = glowSpheres;
         this.timeOfDayController = timeOfDayController;
+        this.lightControls = null; // Will be set from main.js
+        this.animationModeControls = null; // Will be set from main.js
 
         // Physical constants
         this.EARTH_ROTATION_SPEED = 1156; // feet per second at Burning Man latitude
@@ -38,6 +40,10 @@ export class LightAnimation {
         this.PEAK_INTENSITY = 1000; // Maximum light intensity (increased for fuller coverage)
         this.PEAK_OPACITY = 0.8; // Maximum glow sphere opacity
         this.PEAK_BULB_OPACITY = 1.0; // Maximum bulb opacity
+
+        // Brightness burst settings (default values)
+        this.lowBrightness = 6000;
+        this.highBrightness = 200000;
     }
 
     /**
@@ -107,7 +113,14 @@ export class LightAnimation {
         const bulbOpacity = intensity > 0 ? this.PEAK_BULB_OPACITY : 0;
 
         for (let i = 0; i < this.lights.length; i++) {
+            // Set main light (PointLight)
             this.lights[i].intensity = intensity;
+
+            // Set accent spotlight (30% of main)
+            if (this.lights[i].userData.spotLight) {
+                this.lights[i].userData.spotLight.intensity = intensity * 0.3;
+            }
+
             this.glowSpheres[i].material.opacity = opacity;
             if (this.lights[i].userData.bulb) {
                 this.lights[i].userData.bulb.material.opacity = bulbOpacity;
@@ -121,7 +134,14 @@ export class LightAnimation {
     setLightIntensity(index, intensity, glowOpacity, bulbOpacity) {
         if (index < 0 || index >= this.lights.length) return;
 
+        // Set main light (PointLight) intensity
         this.lights[index].intensity = intensity;
+
+        // Set accent spotlight intensity (30% of main light for ground focus)
+        if (this.lights[index].userData.spotLight) {
+            this.lights[index].userData.spotLight.intensity = intensity * 0.3;
+        }
+
         this.glowSpheres[index].material.opacity = glowOpacity;
         if (this.lights[index].userData.bulb) {
             this.lights[index].userData.bulb.material.opacity = bulbOpacity;
@@ -366,13 +386,22 @@ export class LightAnimation {
     }
 
     /**
-     * Brightness Burst: 5 dim cycles (6000) followed by 3 bright cycles (200000)
+     * Brightness Burst: 5 dim cycles (lowBrightness) followed by 3 bright cycles (highBrightness)
      */
     updateBrightnessBurst() {
         // Initialize mode state
-        if (!this.modeState.cycleCount) {
+        if (this.modeState.cycleCount === undefined) {
             this.modeState.cycleCount = 0;
             this.modeState.lastCycleTime = 0;
+            // Set initial brightness (dim for first 5 cycles)
+            this.PEAK_INTENSITY = this.lowBrightness / 200; // Convert UI value to internal
+            console.log(`🌙 Brightness Burst: Started - Cycle 1/8 - DIM (${this.lowBrightness})`);
+            if (this.lightControls) {
+                this.lightControls.updateUIFromAnimation();
+            }
+            if (this.animationModeControls) {
+                this.animationModeControls.updateModeDescription(`Cycle 1/8 - DIM (${this.lowBrightness})`);
+            }
         }
 
         const cycleTime = this.currentTime % this.cycleDuration;
@@ -384,16 +413,32 @@ export class LightAnimation {
 
             // After 5 dim cycles + 3 bright cycles = 8 total, reset to 0
             if (this.modeState.cycleCount >= 8) {
+                console.log('🔄 Brightness Burst: Resetting cycle count to 0');
                 this.modeState.cycleCount = 0;
             }
 
             // Set brightness based on cycle count
+            const cycleNum = this.modeState.cycleCount + 1;
+            let statusText = '';
+
             if (this.modeState.cycleCount < 5) {
-                // First 5 cycles: dim (6000 in UI = 30 internal)
-                this.PEAK_INTENSITY = 30;
+                // First 5 cycles: dim
+                this.PEAK_INTENSITY = this.lowBrightness / 200;
+                statusText = `Cycle ${cycleNum}/8 - DIM (${this.lowBrightness})`;
+                console.log(`🌙 Brightness Burst: ${statusText}`);
             } else {
-                // Next 3 cycles: bright (200000 in UI = 1000 internal)
-                this.PEAK_INTENSITY = 1000;
+                // Next 3 cycles: bright
+                this.PEAK_INTENSITY = this.highBrightness / 200;
+                statusText = `Cycle ${cycleNum}/8 - BRIGHT (${this.highBrightness})`;
+                console.log(`☀️ Brightness Burst: ${statusText}`);
+            }
+
+            // Update UI to reflect new brightness and status
+            if (this.lightControls) {
+                this.lightControls.updateUIFromAnimation();
+            }
+            if (this.animationModeControls) {
+                this.animationModeControls.updateModeDescription(statusText);
             }
         }
 
@@ -415,27 +460,73 @@ export class LightAnimation {
 
     /**
      * Brightness Burst (Realtime): Every 15 minutes, do 3 bright bursts, otherwise dim
+     * Synchronized to system clock at :00, :15, :30, :45 minutes past each hour
      */
     updateBrightnessBurstRealtime() {
-        // Initialize mode state with real time tracking
-        if (!this.modeState.realtimeStartTime) {
-            this.modeState.realtimeStartTime = Date.now();
+        // Initialize mode state
+        if (this.modeState.lastBurstCycleCount === undefined) {
             this.modeState.lastBurstCycleCount = 0;
+            this.modeState.lastCycleTime = 0;
+            this.modeState.lastQuarterHour = -1; // Track which quarter hour we were in
+
+            // Set initial brightness based on current clock time
+            const now = new Date();
+            const minutes = now.getMinutes();
+            const seconds = now.getSeconds();
+            const totalSeconds = minutes * 60 + seconds;
+            const secondsIntoQuarterHour = totalSeconds % 900; // 900 seconds = 15 minutes
+
+            this.PEAK_INTENSITY = (secondsIntoQuarterHour < 30) ? this.highBrightness / 200 : this.lowBrightness / 200;
+            console.log(`⏰ Brightness Burst (Realtime): Started - ${this.PEAK_INTENSITY === this.highBrightness / 200 ? `BRIGHT (${this.highBrightness})` : `DIM (${this.lowBrightness})`}`);
+            if (this.lightControls) {
+                this.lightControls.updateUIFromAnimation();
+            }
         }
 
-        // Calculate time since mode started
-        const elapsedMs = Date.now() - this.modeState.realtimeStartTime;
-        const elapsedMinutes = elapsedMs / (1000 * 60);
+        // Get current time from system clock
+        const now = new Date();
+        const minutes = now.getMinutes();
+        const seconds = now.getSeconds();
+        const totalSeconds = minutes * 60 + seconds;
 
-        // 15-minute cycle: determine if we're in burst period
-        const cyclePosition = elapsedMinutes % 15;
+        // Calculate which quarter-hour period we're in (0-3)
+        const currentQuarterHour = Math.floor(totalSeconds / 900); // 0, 1, 2, or 3
 
-        // Calculate how many full animation cycles have completed in the current burst
+        // Calculate seconds into the current quarter hour
+        const secondsIntoQuarterHour = totalSeconds % 900;
+
+        // Calculate seconds until next quarter hour
+        const secondsUntilNextQuarterHour = 900 - secondsIntoQuarterHour;
+
+        // Calculate next quarter hour full time (hour:minutes)
+        // currentQuarterHour: 0 → next is :15, 1 → :30, 2 → :45, 3 → :00
+        const nextQuarterMinutes = ((currentQuarterHour + 1) % 4) * 15;
+        let nextQuarterHour = now.getHours();
+        // If next quarter is :00 (top of hour), increment hour
+        if (nextQuarterMinutes === 0 && currentQuarterHour === 3) {
+            nextQuarterHour = (nextQuarterHour + 1) % 24; // Handle 23 → 0 wraparound
+        }
+        const nextQuarterText = `${nextQuarterHour}:${String(nextQuarterMinutes).padStart(2, '0')}`;
+
+        // Format countdown as MM:SS
+        const countdownMinutes = Math.floor(secondsUntilNextQuarterHour / 60);
+        const countdownSeconds = Math.floor(secondsUntilNextQuarterHour % 60);
+        const countdownText = `${String(countdownMinutes).padStart(2, '0')}:${String(countdownSeconds).padStart(2, '0')}`;
+
+        // Detect quarter-hour boundary crossing
+        if (this.modeState.lastQuarterHour !== -1 && currentQuarterHour !== this.modeState.lastQuarterHour) {
+            // Quarter hour just changed - reset burst count
+            console.log(`⏰ Quarter hour boundary crossed! Now at :${String(Math.floor(totalSeconds / 60)).padStart(2, '0')} - Starting burst sequence`);
+            this.modeState.lastBurstCycleCount = 0;
+        }
+        this.modeState.lastQuarterHour = currentQuarterHour;
+
+        // Track animation cycle completions
         const cycleTime = this.currentTime % this.cycleDuration;
         if (cycleTime < this.modeState.lastCycleTime) {
             // Cycle completed
-            if (cyclePosition < 0.5) {
-                // We're in the first 30 seconds of the 15-minute window (burst period)
+            if (secondsIntoQuarterHour < 30) {
+                // We're in the first 30 seconds of the quarter hour (burst period)
                 this.modeState.lastBurstCycleCount++;
             } else {
                 // Reset burst count when we're outside the burst period
@@ -444,14 +535,31 @@ export class LightAnimation {
         }
         this.modeState.lastCycleTime = cycleTime;
 
-        // Determine brightness: bright for first 3 cycles every 15 minutes, dim otherwise
-        // First 30 seconds of each 15-minute period = burst time
-        if (cyclePosition < 0.5 && this.modeState.lastBurstCycleCount < 3) {
-            // Bright burst (200000 in UI = 1000 internal)
-            this.PEAK_INTENSITY = 1000;
-        } else {
-            // Dim (6000 in UI = 30 internal)
-            this.PEAK_INTENSITY = 30;
+        // Determine brightness: bright for first 3 cycles after quarter hour, dim otherwise
+        // First 30 seconds of each quarter hour = burst time
+        const newIntensity = (secondsIntoQuarterHour < 30 && this.modeState.lastBurstCycleCount < 3) ?
+            this.highBrightness / 200 : this.lowBrightness / 200;
+
+        // Update brightness if it changed
+        if (this.PEAK_INTENSITY !== newIntensity) {
+            this.PEAK_INTENSITY = newIntensity;
+            const statusText = this.PEAK_INTENSITY === this.highBrightness / 200 ?
+                `☀️ BRIGHT (${this.highBrightness})` : `🌙 DIM (${this.lowBrightness})`;
+            console.log(`⏰ Brightness Burst (Realtime): ${statusText} - Cycle ${this.modeState.lastBurstCycleCount + 1}/3`);
+
+            // Update UI to reflect new brightness
+            if (this.lightControls) {
+                this.lightControls.updateUIFromAnimation();
+            }
+        }
+
+        // Update countdown timer in mode description
+        if (this.animationModeControls) {
+            const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            const statusText = this.PEAK_INTENSITY === this.highBrightness / 200 ?
+                `BRIGHT - Next burst in: ${countdownText} (${nextQuarterText}) - ${currentTime}` :
+                `DIM - Next burst in: ${countdownText} (${nextQuarterText}) - ${currentTime}`;
+            this.animationModeControls.updateModeDescription(statusText);
         }
 
         // Run sequential animation with current brightness
@@ -547,6 +655,22 @@ export class LightAnimation {
     }
 
     /**
+     * Set low brightness value for brightness burst modes
+     * @param {number} brightness - Brightness value (0-100000)
+     */
+    setLowBrightness(brightness) {
+        this.lowBrightness = Math.max(0, Math.min(100000, brightness));
+    }
+
+    /**
+     * Set high brightness value for brightness burst modes
+     * @param {number} brightness - Brightness value (0-300000)
+     */
+    setHighBrightness(brightness) {
+        this.highBrightness = Math.max(0, Math.min(300000, brightness));
+    }
+
+    /**
      * Get current animation status
      * @returns {object} Status information
      */
@@ -583,7 +707,7 @@ export class LightAnimation {
             { id: 'converge-point', name: 'Converge Point', description: 'Both ends to specific point' },
             { id: 'diverge-center', name: 'Diverge Center', description: 'Middle outward' },
             { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' },
-            { id: 'brightness-burst', name: 'Brightness Burst', description: '5 dim cycles, then 3 bright cycles (night mode)' },
+            { id: 'brightness-burst', name: 'Brightness Burst', description: '5 dim cycles (low brightness) followed by 3 bright cycles (high brightness), repeating continuously' },
             { id: 'brightness-burst-realtime', name: 'Brightness Burst (Realtime)', description: '3 bright bursts every 15 minutes (night mode)' }
         ];
     }

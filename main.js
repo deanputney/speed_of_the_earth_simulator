@@ -13,6 +13,9 @@ import { LightControls } from './lightControls.js';
 const scene = new THREE.Scene();
 // Background will be set by TimeOfDayController
 
+// Add very subtle atmospheric fog (optional - can be disabled)
+scene.fog = new THREE.FogExp2(0x1a1a2e, 0.00015); // Very subtle fog
+
 // Add ambient light - much dimmer to allow sun to dominate
 const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
 scene.add(ambientLight);
@@ -162,21 +165,34 @@ for (let i = 0; i < NUM_LIGHTS; i++) {
     scene.add(marker);
     lightMarkers.push(marker);
 
-    // Create spotlight pointing down at the ground
-    // Angle calculation: for 100ft diameter circle from 4ft height
-    // tan(angle) = radius/height = 50/4 = 12.5, angle = atan(12.5) ≈ 1.49 radians (85.4°)
-    const light = new THREE.SpotLight(
+    // Hybrid lighting system for realistic soft diffuse light:
+    // 1. PointLight for omnidirectional spread (main light)
+    const pointLight = new THREE.PointLight(
         0xffffff,  // color
-        0,         // intensity (initially off)
-        200,       // distance (increased to ensure full coverage)
-        1.49,      // angle (85.4 degrees - creates 100ft circle from 4ft height)
-        0.2,       // penumbra (soft edge, reduced for sharper circle)
-        0.2        // decay (further reduced for more even illumination to circle edge)
+        0,         // intensity (initially off, controlled by animation)
+        250,       // distance - how far the light reaches
+        1.5        // decay - gentler falloff for wider spread
     );
-    light.position.set(0, LIGHT_HEIGHT, z);
-    light.target.position.set(0, 0, z); // Point straight down
-    scene.add(light);
-    scene.add(light.target);
+    pointLight.position.set(0, LIGHT_HEIGHT + 2, z); // Slightly higher for better spread
+    scene.add(pointLight);
+
+    // 2. SpotLight pointing down for ground focus (subtle accent)
+    const spotLight = new THREE.SpotLight(
+        0xffffff,  // color
+        0,         // intensity (initially off, will be 30% of point light)
+        300,       // distance (increased)
+        1.2,       // angle (wider cone ~68° for softer coverage)
+        0.9,       // penumbra (very soft edges)
+        1.0        // decay (light spreads further)
+    );
+    spotLight.position.set(0, LIGHT_HEIGHT, z);
+    spotLight.target.position.set(0, 0, z); // Point straight down
+    scene.add(spotLight);
+    scene.add(spotLight.target);
+
+    // Store both lights - point light is primary, spot is accent
+    const light = pointLight; // Primary light for animation control
+    light.userData.spotLight = spotLight; // Store accent light
     lights.push(light);
 
     // Create small glow sphere for subtle corona effect (much smaller)
@@ -245,6 +261,9 @@ const animationModeControls = new AnimationModeControls(
     unifiedControls.getTabContainer('animation')
 );
 
+// Link animation mode controls back to animation for UI updates
+lightAnimation.animationModeControls = animationModeControls;
+
 // Initialize display controls in display tab
 const displayControls = new DisplayControls(
     lights,
@@ -273,6 +292,9 @@ const lightControls = new LightControls(
     unifiedControls.getTabContainer('lighting')
 );
 
+// Link light controls back to animation for UI updates
+lightAnimation.lightControls = lightControls;
+
 // Window resize handling
 function onWindowResize() {
     cameraController.onWindowResize();
@@ -281,6 +303,125 @@ function onWindowResize() {
 }
 
 window.addEventListener('resize', onWindowResize);
+
+// Parse URL parameters and apply settings
+function parseURLParameters() {
+    const params = new URLSearchParams(window.location.search);
+
+    // Animation mode
+    const mode = params.get('mode') || params.get('animation');
+    if (mode) {
+        const availableModes = lightAnimation.getAvailableModes();
+        const modeExists = availableModes.some(m => m.id === mode);
+        if (modeExists) {
+            lightAnimation.setAnimationMode(mode);
+            // Update the mode selector dropdown
+            const modeSelector = document.getElementById('mode-selector');
+            if (modeSelector) {
+                modeSelector.value = mode;
+            }
+            // Auto-select the animation tab
+            unifiedControls.switchTab('animation');
+            console.log(`📍 URL: Set animation mode to "${mode}"`);
+        } else {
+            console.warn(`⚠️ URL: Invalid animation mode "${mode}"`);
+        }
+    }
+
+    // Convergence/divergence point
+    const point = params.get('point');
+    if (point !== null) {
+        const pointNum = parseInt(point);
+        if (!isNaN(pointNum) && pointNum >= 0 && pointNum < 30) {
+            const currentMode = lightAnimation.animationMode;
+            if (currentMode === 'converge-point') {
+                lightAnimation.setConvergencePoint(pointNum);
+            } else if (currentMode === 'diverge-point') {
+                lightAnimation.setDivergencePoint(pointNum);
+            }
+            // Update point selector
+            const pointSelector = document.getElementById('point-selector');
+            const pointValue = document.getElementById('point-value');
+            if (pointSelector) pointSelector.value = pointNum;
+            if (pointValue) pointValue.textContent = pointNum;
+            console.log(`📍 URL: Set point to ${pointNum}`);
+        }
+    }
+
+    // Brightness settings
+    const lowBrightness = params.get('lowBrightness');
+    const highBrightness = params.get('highBrightness');
+    if (lowBrightness !== null) {
+        const brightness = parseInt(lowBrightness);
+        if (!isNaN(brightness)) {
+            lightAnimation.setLowBrightness(brightness);
+            const slider = document.getElementById('low-brightness-slider');
+            const value = document.getElementById('low-brightness-value');
+            if (slider) slider.value = brightness;
+            if (value) value.textContent = brightness;
+            console.log(`📍 URL: Set low brightness to ${brightness}`);
+        }
+    }
+    if (highBrightness !== null) {
+        const brightness = parseInt(highBrightness);
+        if (!isNaN(brightness)) {
+            lightAnimation.setHighBrightness(brightness);
+            const slider = document.getElementById('high-brightness-slider');
+            const value = document.getElementById('high-brightness-value');
+            if (slider) slider.value = brightness;
+            if (value) value.textContent = brightness;
+            console.log(`📍 URL: Set high brightness to ${brightness}`);
+        }
+    }
+
+    // Camera mode
+    const cameraMode = params.get('camera') || params.get('cameraMode');
+    if (cameraMode) {
+        const validModes = ['walking', 'ground', 'ground_end', 'elevated', 'aerial', 'side', 'follow'];
+        const normalizedMode = cameraMode.toLowerCase();
+        if (validModes.includes(normalizedMode)) {
+            cameraController.setPreset(cameraMode.toUpperCase());
+            console.log(`📍 URL: Set camera preset to "${cameraMode.toUpperCase()}"`);
+        } else {
+            console.warn(`⚠️ URL: Invalid camera preset "${cameraMode}". Valid presets: ${validModes.map(m => m.toUpperCase()).join(', ')}`);
+        }
+    }
+
+    // Camera position (for manual mode)
+    const camX = params.get('cameraX') || params.get('x');
+    const camY = params.get('cameraY') || params.get('y');
+    const camZ = params.get('cameraZ') || params.get('z');
+    if (camX !== null || camY !== null || camZ !== null) {
+        const x = camX !== null ? parseFloat(camX) : camera.position.x;
+        const y = camY !== null ? parseFloat(camY) : camera.position.y;
+        const z = camZ !== null ? parseFloat(camZ) : camera.position.z;
+
+        if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+            camera.position.set(x, y, z);
+            console.log(`📍 URL: Set camera position to (${x}, ${y}, ${z})`);
+        }
+    }
+
+    // Camera target/lookAt
+    const targetX = params.get('targetX');
+    const targetY = params.get('targetY');
+    const targetZ = params.get('targetZ');
+    if (targetX !== null || targetY !== null || targetZ !== null) {
+        const x = targetX !== null ? parseFloat(targetX) : 0;
+        const y = targetY !== null ? parseFloat(targetY) : 0;
+        const z = targetZ !== null ? parseFloat(targetZ) : 0;
+
+        if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+            camera.lookAt(x, y, z);
+            console.log(`📍 URL: Set camera target to (${x}, ${y}, ${z})`);
+        }
+    }
+}
+
+// Apply URL parameters after a short delay to ensure UI is initialized
+setTimeout(() => {
+    parseURLParameters();
+}, 100);
 
 // Track time for delta calculations
 let lastTime = performance.now();

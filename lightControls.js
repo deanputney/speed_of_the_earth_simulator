@@ -28,7 +28,7 @@ export class LightControls {
                     <label style="font-size: 12px;">Brightness</label>
                     <span id="brightness-value" style="font-size: 12px; color: #4CAF50;">200000</span>
                 </div>
-                <input type="range" id="brightness-slider" min="0" max="300000" value="200000" step="1000"
+                <input type="range" id="brightness-slider" min="0" max="500000" value="200000" step="1000"
                     style="width: 100%; cursor: pointer;">
                 <div style="display: flex; justify-content: space-between; font-size: 10px; color: #888; margin-top: 2px;">
                     <span>Off</span>
@@ -131,9 +131,35 @@ export class LightControls {
         const internalIntensity = this.brightness * 0.005;
         this.lightAnimation.PEAK_INTENSITY = internalIntensity;
 
-        // Update distance for all lights
+        // Update distance for all lights (both point and spot)
         this.lights.forEach(light => {
             light.distance = this.distance;
+            // Also update spotlight if it exists
+            if (light.userData.spotLight) {
+                light.userData.spotLight.distance = this.distance;
+            }
         });
+    }
+
+    /**
+     * Update UI to reflect current brightness from animation system
+     * Called by animation when brightness changes programmatically
+     */
+    updateUIFromAnimation() {
+        // Convert internal intensity back to UI brightness
+        // Mapping: internal * 200 = UI (1000 * 200 = 200000)
+        const uiBrightness = Math.round(this.lightAnimation.PEAK_INTENSITY * 200);
+
+        // Only update if brightness has changed
+        if (uiBrightness !== this.brightness) {
+            this.brightness = uiBrightness;
+
+            // Update slider and display
+            const brightnessSlider = document.getElementById('brightness-slider');
+            const brightnessValue = document.getElementById('brightness-value');
+
+            if (brightnessSlider) brightnessSlider.value = this.brightness;
+            if (brightnessValue) brightnessValue.textContent = this.brightness.toLocaleString();
+        }
     }
 }

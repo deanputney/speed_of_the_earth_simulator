@@ -26,6 +26,39 @@ Use the camera control panel (top-right) to switch between different viewing ang
 ### Time of Day
 Adjust the sun position and lighting using the time-of-day controls in the UI.
 
+## URL Parameters
+
+You can configure the simulation via URL parameters to share specific views and settings:
+
+### Animation Mode
+- `mode` or `animation` - Set the animation mode
+  - Example: `?mode=brightness-burst`
+  - Available modes: `converge-center`, `diverge-center`, `converge-point`, `diverge-point`, `brightness-burst`, `brightness-burst-realtime`
+
+### Animation Settings
+- `point` - Set the convergence/divergence point (0-29) for point-based modes
+  - Example: `?mode=converge-point&point=15`
+- `lowBrightness` - Set low brightness for brightness burst modes
+  - Example: `?mode=brightness-burst&lowBrightness=8000`
+- `highBrightness` - Set high brightness for brightness burst modes
+  - Example: `?mode=brightness-burst&highBrightness=250000`
+
+### Camera Settings
+- `camera` or `cameraMode` - Set the camera preset (case-insensitive)
+  - Example: `?camera=follow`
+  - Available presets: `WALKING`, `GROUND`, `GROUND_END`, `ELEVATED`, `AERIAL`, `SIDE`, `FOLLOW`
+- `cameraX`, `cameraY`, `cameraZ` (or `x`, `y`, `z`) - Set camera position (for manual positioning)
+  - Example: `?x=0&y=200&z=500`
+- `targetX`, `targetY`, `targetZ` - Set camera look-at target (for manual positioning)
+  - Example: `?x=100&y=50&z=0&targetX=0&targetY=0&targetZ=0`
+
+### Example URLs
+- Brightness burst with custom values: `?mode=brightness-burst&lowBrightness=10000&highBrightness=300000`
+- Converge to point 20: `?mode=converge-point&point=20`
+- Follow camera with brightness burst: `?mode=brightness-burst&camera=follow`
+- Aerial camera preset: `?camera=aerial`
+- Custom camera position: `?x=0&y=500&z=1000`
+
 ## Running Locally
 
 ```bash

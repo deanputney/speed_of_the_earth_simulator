@@ -466,3 +466,41 @@ canvas {
     cursor: pointer;
     accent-color: rgba(76, 175, 80, 1);
 }
+
+/* Brightness Controls */
+.brightness-controls-container {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.brightness-controls-container.hidden {
+    display: none;
+}
+
+.brightness-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.brightness-control label {
+    font-size: 13px;
+    white-space: nowrap;
+    min-width: 120px;
+}
+
+.brightness-slider {
+    flex: 1;
+    cursor: pointer;
+    accent-color: rgba(76, 175, 80, 1);
+}
+
+.brightness-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(76, 175, 80, 1);
+    min-width: 60px;
+    text-align: right;
+}
