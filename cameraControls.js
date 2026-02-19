@@ -73,7 +73,7 @@ export class CameraController {
         // Walking mode state
         this.isWalkingMode = false;
         this.walkSpeed = 50; // feet per second (base speed)
-        this.runSpeedMultiplier = 3; // 3x speed when running
+        this.runSpeedMultiplier = 5; // 5x speed when running
         this.moveState = { forward: false, backward: false, left: false, right: false, running: false };
         this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
         this.velocity = new THREE.Vector3();
