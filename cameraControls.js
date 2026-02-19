@@ -72,11 +72,14 @@ export class CameraController {
 
         // Walking mode state
         this.isWalkingMode = false;
-        this.walkSpeed = 50; // feet per second
-        this.moveState = { forward: false, backward: false, left: false, right: false };
+        this.walkSpeed = 50; // feet per second (base speed)
+        this.runSpeedMultiplier = 3; // 3x speed when running
+        this.moveState = { forward: false, backward: false, left: false, right: false, running: false };
         this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
+        this.transitionToEuler = null;
+        this.transitionFromEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
         // Jump state
         this.isJumping = false;
@@ -89,8 +92,8 @@ export class CameraController {
         this.createUI();
         this.setupWalkingControls();
 
-        // Set default view to elevated
-        this.setPreset('ELEVATED', false);
+        // Set default view to walking mode
+        this.setPreset('WALKING', false);
     }
 
     initControls() {
@@ -140,12 +143,12 @@ export class CameraController {
         });
 
         // Set initial active button
-        const elevatedBtn = container.querySelector('[data-preset="ELEVATED"]');
-        if (elevatedBtn) elevatedBtn.classList.add('active');
+        const walkingBtn = container.querySelector('[data-preset="WALKING"]');
+        if (walkingBtn) walkingBtn.classList.add('active');
     }
 
     setupWalkingControls() {
-        // Keyboard controls for WASD and jump
+        // Keyboard controls for WASD, jump, and run
         document.addEventListener('keydown', (e) => {
             if (!this.isWalkingMode) return;
 
@@ -154,6 +157,7 @@ export class CameraController {
                 case 's': this.moveState.backward = true; break;
                 case 'a': this.moveState.left = true; break;
                 case 'd': this.moveState.right = true; break;
+                case 'shift': this.moveState.running = true; break;
                 case ' ':
                     // Jump with spacebar
                     if (!this.isJumping) {
@@ -173,6 +177,7 @@ export class CameraController {
                 case 's': this.moveState.backward = false; break;
                 case 'a': this.moveState.left = false; break;
                 case 'd': this.moveState.right = false; break;
+                case 'shift': this.moveState.running = false; break;
             }
         });
 
@@ -215,9 +220,11 @@ export class CameraController {
             this.controls.enabled = false;
             document.exitPointerLock();
             console.log('Walking mode: Use WASD to move, click to enable mouse look');
+            this.minimapControls?.show();
         } else {
             this.controls.enabled = true;
             document.exitPointerLock();
+            this.minimapControls?.hide();
         }
 
         if (animate && !this.isTransitioning) {
@@ -258,6 +265,32 @@ export class CameraController {
         }
     }
 
+    teleportToPosition(position, euler, duration = 1.0) {
+        if (!this.isWalkingMode) {
+            this.setPreset('WALKING', false);
+        }
+        document.exitPointerLock();
+
+        // DEBUG: Log received parameters
+        console.log('teleportToPosition() called:');
+        console.log('  Position:', position.x.toFixed(1), position.y.toFixed(1), position.z.toFixed(1));
+        console.log('  Target Euler:', euler.x.toFixed(3), euler.y.toFixed(3), euler.z.toFixed(3));
+        console.log('  Current Euler:', this.euler.x.toFixed(3), this.euler.y.toFixed(3), this.euler.z.toFixed(3));
+
+        this.isTransitioning = true;
+        this.transitionProgress = 0;
+        this.transitionStart = performance.now();
+        this.transitionDuration = duration;
+
+        this.transitionFromPos.copy(this.camera.position);
+        this.transitionToPos.copy(position);
+        this.transitionToEuler = euler.clone();
+        this.transitionFromEuler = this.euler.clone();
+
+        this.transitionFromFov = this.camera.fov;
+        this.transitionToFov = 75;
+    }
+
     update(deltaTime, wavePosition) {
         // Update wave position for following camera
         if (wavePosition !== undefined) {
@@ -284,20 +317,48 @@ export class CameraController {
             this.camera.fov = this.transitionFromFov + (this.transitionToFov - this.transitionFromFov) * t;
             this.camera.updateProjectionMatrix();
 
+            // Interpolate orientation for teleport
+            if (this.transitionToEuler) {
+                this.euler.x = this.transitionFromEuler.x +
+                    (this.transitionToEuler.x - this.transitionFromEuler.x) * t;
+                this.euler.y = this.transitionFromEuler.y +
+                    (this.transitionToEuler.y - this.transitionFromEuler.y) * t;
+                this.camera.quaternion.setFromEuler(this.euler);
+            }
+
             if (this.transitionProgress >= 1) {
                 this.isTransitioning = false;
 
                 // If entering walking mode, set initial look direction
                 if (this.isWalkingMode) {
-                    const lookDirection = new THREE.Vector3();
-                    lookDirection.subVectors(this.transitionToTarget, this.camera.position).normalize();
+                    if (this.transitionToEuler) {
+                        // Apply final orientation from teleport
+                        console.log('Transition complete - applying final orientation:');
+                        console.log('  Before euler:', this.euler.x.toFixed(3), this.euler.y.toFixed(3), this.euler.z.toFixed(3));
+                        this.euler.copy(this.transitionToEuler);
+                        console.log('  After euler:', this.euler.x.toFixed(3), this.euler.y.toFixed(3), this.euler.z.toFixed(3));
+                        this.camera.quaternion.setFromEuler(this.euler);
 
-                    // Calculate euler angles from look direction
-                    this.euler.y = Math.atan2(lookDirection.x, -lookDirection.z);
-                    this.euler.x = Math.asin(lookDirection.y);
-                    this.euler.z = 0;
+                        // DEBUG: Check orientation a moment later
+                        setTimeout(() => {
+                            const currentEuler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+                            console.log('Euler 100ms after transition:', currentEuler.x.toFixed(3), currentEuler.y.toFixed(3), currentEuler.z.toFixed(3));
+                        }, 100);
 
-                    this.camera.quaternion.setFromEuler(this.euler);
+                        this.transitionToEuler = null;
+                        this.transitionFromEuler = null;
+                    } else {
+                        // Standard preset transition
+                        const lookDirection = new THREE.Vector3();
+                        lookDirection.subVectors(this.transitionToTarget, this.camera.position).normalize();
+
+                        // Calculate euler angles from look direction
+                        this.euler.y = Math.atan2(lookDirection.x, -lookDirection.z);
+                        this.euler.x = Math.asin(lookDirection.y);
+                        this.euler.z = 0;
+
+                        this.camera.quaternion.setFromEuler(this.euler);
+                    }
                 }
             }
         }
@@ -318,7 +379,9 @@ export class CameraController {
 
         // Handle walking mode
         if (this.isWalkingMode && !this.isTransitioning) {
-            const speed = this.walkSpeed * deltaTime;
+            // Apply run speed multiplier when shift is held
+            const speedMultiplier = this.moveState.running ? this.runSpeedMultiplier : 1;
+            const speed = this.walkSpeed * speedMultiplier * deltaTime;
 
             // Get camera direction
             this.direction.set(0, 0, 0);

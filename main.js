@@ -8,6 +8,7 @@ import { TimeOfDayController } from './timeOfDay.js';
 import { SunControls } from './sunControls.js';
 import { UnifiedControls } from './unifiedControls.js';
 import { LightControls } from './lightControls.js';
+import { MinimapControls } from './minimapControls.js';
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -255,6 +256,16 @@ const unifiedControls = new UnifiedControls();
 const cameraController = new CameraController(camera, renderer);
 cameraController.createUI(unifiedControls.getTabContainer('camera'));
 
+// Initialize minimap
+const minimapControls = new MinimapControls(camera, scene, cameraController, lights);
+cameraController.minimapControls = minimapControls;
+// Show/hide based on current mode
+if (cameraController.isWalkingMode) {
+    minimapControls.show();
+} else {
+    minimapControls.hide();
+}
+
 // Initialize animation mode controls in its tab
 const animationModeControls = new AnimationModeControls(
     lightAnimation,
@@ -461,6 +472,9 @@ function animate() {
     // Update camera controller with current wave position
     const wavePosition = lightAnimation.getCurrentWavePosition();
     cameraController.update(deltaTime, wavePosition);
+
+    // Update minimap
+    minimapControls.update();
 
     renderer.render(scene, camera);
 }
