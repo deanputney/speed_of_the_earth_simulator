@@ -10,6 +10,8 @@ import * as THREE from 'three';
 
 const CORONA_RADIUS = 50; // feet, the 100-foot pool of light around each strobe
 const PEAK_POOL_OPACITY = 0.95;
+// Over-bright so the center saturates like a strobe-lit surface
+const POOL_COLOR = new THREE.Color(0xfff6e8).multiplyScalar(1.6);
 const PEAK_GLOW_OPACITY = 0.8;
 const IDLE_BULB_EMISSIVE = 0.3;
 const PEAK_BULB_EMISSIVE = 4;
@@ -66,6 +68,10 @@ export class Installation {
         this.headHeight = 0;
         this.scaleCirclesVisible = false;
 
+        // Flash brightness relative to standard (1 = 200,000) and pool size relative to 100 ft
+        this.brightness = 1;
+        this.spread = 1;
+
         // Unit vector the wave travels along, and the horizontal vector to its left
         this.direction = new THREE.Vector3(0, 0, 1);
         this.side = new THREE.Vector3(1, 0, 0);
@@ -115,17 +121,22 @@ export class Installation {
     }
 
     /**
-     * Copy of a flat ground-level geometry, draped over the terrain around `base`
+     * Copy of a flat ground-level geometry, scaled and draped over the terrain around `base`
      */
-    drape(geometry, base, lift) {
+    drape(geometry, base, lift, scale = 1) {
         const draped = geometry.clone();
         const position = draped.attributes.position;
         for (let k = 0; k < position.count; k++) {
-            const ground = this.groundHeight(base.x + position.getX(k), base.z + position.getZ(k));
-            position.setY(k, ground - base.y + lift);
+            const x = position.getX(k) * scale;
+            const z = position.getZ(k) * scale;
+            position.setXYZ(k, x, this.groundHeight(base.x + x, base.z + z) - base.y + lift, z);
         }
-        this.buildResources.push(draped);
         return draped;
+    }
+
+    // Brightness reads roughly logarithmically, so scale the pools by its square root
+    get perceivedBrightness() {
+        return Math.sqrt(this.brightness);
     }
 
     alongForIndex(index) {
@@ -164,8 +175,7 @@ export class Installation {
 
             const poolMaterial = new THREE.MeshBasicMaterial({
                 map: this.poolTexture,
-                // Over-bright so the center saturates like a strobe-lit surface
-                color: new THREE.Color(0xfff6e8).multiplyScalar(1.6),
+                color: POOL_COLOR.clone().multiplyScalar(this.perceivedBrightness),
                 transparent: true,
                 opacity: 0,
                 blending: THREE.AdditiveBlending,
@@ -174,7 +184,7 @@ export class Installation {
                 polygonOffsetFactor: -4,
                 polygonOffsetUnits: -4
             });
-            const pool = new THREE.Mesh(this.drape(this.poolGeometry, base, 0.3), poolMaterial);
+            const pool = new THREE.Mesh(this.drape(this.poolGeometry, base, 0.3, this.spread), poolMaterial);
             pool.position.copy(base);
             this.group.add(pool);
             this.buildResources.push(poolMaterial);
@@ -221,16 +231,19 @@ export class Installation {
             this.group.add(star);
             this.buildResources.push(starMaterial);
 
-            const scaleCircle = new THREE.Mesh(this.drape(this.circleGeometry, base, 0.4), this.circleMaterial);
+            const circleGeometry = this.drape(this.circleGeometry, base, 0.4);
+            this.buildResources.push(circleGeometry);
+            const scaleCircle = new THREE.Mesh(circleGeometry, this.circleMaterial);
             scaleCircle.position.copy(base);
             scaleCircle.visible = this.scaleCirclesVisible;
             this.group.add(scaleCircle);
 
-            this.fixtures.push({ pool, glow, star, bulb, scaleCircle });
+            this.fixtures.push({ base, pool, glow, star, bulb, scaleCircle });
         }
     }
 
     clear() {
+        for (const fixture of this.fixtures) fixture.pool.geometry.dispose();
         this.group.clear();
         this.buildResources.forEach(resource => resource.dispose());
         this.buildResources = [];
@@ -244,15 +257,37 @@ export class Installation {
     setLevel(index, level) {
         const fixture = this.fixtures[index];
         if (!fixture) return;
+        const glowLevel = level * Math.min(1, this.perceivedBrightness);
         fixture.pool.material.opacity = level * PEAK_POOL_OPACITY;
-        fixture.glow.material.opacity = level * PEAK_GLOW_OPACITY;
-        fixture.star.material.opacity = level;
+        fixture.glow.material.opacity = glowLevel * PEAK_GLOW_OPACITY;
+        fixture.star.material.opacity = glowLevel;
         fixture.bulb.material.emissiveIntensity =
             IDLE_BULB_EMISSIVE + level * (PEAK_BULB_EMISSIVE - IDLE_BULB_EMISSIVE);
     }
 
     setAllLevels(level) {
         for (let i = 0; i < this.fixtures.length; i++) this.setLevel(i, level);
+    }
+
+    /**
+     * @param {number} brightness - relative to the standard flash (1 = 200,000)
+     */
+    setBrightness(brightness) {
+        this.brightness = Math.max(0, brightness);
+        for (const fixture of this.fixtures) {
+            fixture.pool.material.color.copy(POOL_COLOR).multiplyScalar(this.perceivedBrightness);
+        }
+    }
+
+    /**
+     * @param {number} spread - pool of light size relative to the 100 ft corona
+     */
+    setSpread(spread) {
+        this.spread = Math.max(0.1, spread);
+        for (const fixture of this.fixtures) {
+            fixture.pool.geometry.dispose();
+            fixture.pool.geometry = this.drape(this.poolGeometry, fixture.base, 0.3, this.spread);
+        }
     }
 
     setScaleCirclesVisible(visible) {

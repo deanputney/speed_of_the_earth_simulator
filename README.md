@@ -36,13 +36,51 @@ Layouts are saved in the URL so they can be shared, for example:
 - **?** - Show help menu
 
 ### Camera Views
-The **Camera** tab switches between Walking Mode, Ground Start, Ground End, Elevated, Aerial, Side and Following Wave views. Views scale to the length of the row. In Walking Mode use **WASD** to move, **Space** to jump and click to look around.
+The **Camera** tab switches between Walking Mode, Ground Start, Ground End, Elevated, Aerial, Side and Following Wave views. Views scale to the length of the row. In Walking Mode use **WASD** to move, hold **Shift** to run, **Space** to jump and click to look around. The minimap (bottom-left) shows your position; click or drag on it to move there.
 
 ### Lighting
-The **Lighting** tab sets the date and local time at the site. The sun is placed from the site's latitude and longitude, and the sky, ambient light and haze follow the sun's elevation. The Night, Dawn, Day, Golden Hour and Dusk buttons jump to times relative to that day's sunrise and sunset. You can still drag the sun position by hand.
+The **Lighting** tab sets the date and local time at the site. The sun is placed from the site's latitude and longitude, and the sky, ambient light and haze follow the sun's elevation. The Night, Dawn, Day, Golden Hour and Dusk buttons jump to times relative to that day's sunrise and sunset. The tab also sets flash brightness (6,000 dim to 200,000 standard) and how far the light spreads, and you can still drag the sun position by hand.
 
 ### Display
 The **Display** tab toggles the 50-foot scale circles and sets atmospheric visibility (haze, dust or Bay fog).
+
+## URL Parameters
+
+You can configure the simulation via URL parameters to share specific views and settings:
+
+### Site and Layout
+- `site` - `burning-man` or `crissy-field`
+- `lights`, `spacing`, `height` - Number of lights, spacing and flash head height in feet
+  - Example: `?site=crissy-field&lights=30&spacing=83.33&height=10`
+
+### Animation Mode
+- `mode` or `animation` - Set the animation mode
+  - Example: `?mode=brightness-burst`
+  - Available modes: `sequential`, `blink-all`, `fast-runs`, `ping-pong`, `ping-pong-fast`, `random`, `converge-center`, `diverge-center`, `converge-point`, `diverge-point`, `brightness-burst`, `brightness-burst-realtime`
+
+### Animation Settings
+- `point` - Set the convergence/divergence point (0 to number of lights − 1) for point-based modes
+  - Example: `?mode=converge-point&point=15`
+- `lowBrightness` - Set low brightness for brightness burst modes
+  - Example: `?mode=brightness-burst&lowBrightness=8000`
+- `highBrightness` - Set high brightness for brightness burst modes
+  - Example: `?mode=brightness-burst&highBrightness=250000`
+
+### Camera Settings
+- `camera` or `cameraMode` - Set the camera preset (case-insensitive)
+  - Example: `?camera=follow`
+  - Available presets: `WALKING`, `GROUND`, `GROUND_END`, `ELEVATED`, `AERIAL`, `SIDE`, `FOLLOW`
+- `cameraX`, `cameraY`, `cameraZ` (or `x`, `y`, `z`) - Set camera position (for manual positioning)
+  - Example: `?x=0&y=200&z=500`
+- `targetX`, `targetY`, `targetZ` - Set camera look-at target (for manual positioning)
+  - Example: `?x=100&y=50&z=0&targetX=0&targetY=0&targetZ=0`
+
+### Example URLs
+- Brightness burst with custom values: `?mode=brightness-burst&lowBrightness=10000&highBrightness=300000`
+- Converge to point 20: `?mode=converge-point&point=20`
+- Follow camera with brightness burst: `?mode=brightness-burst&camera=follow`
+- Aerial camera preset: `?camera=aerial`
+- Custom camera position: `?x=0&y=500&z=1000`
 
 ## Running Locally
 
@@ -70,7 +108,7 @@ Then open http://localhost:8000 in your browser. With [mise](https://mise.jdx.de
 | `crissyFieldGeography.js` | Promenade and Golden Gate Bridge positions from OpenStreetMap |
 | `solar.js` | Sun position, sunrise and sunset |
 | `timeOfDay.js` | Sky, ambient light and sun from the date and time |
-| `*Controls.js` | UI panels and keyboard/camera controls |
+| `*Controls.js` | UI panels, keyboard/camera controls and the walking minimap |
 
 ## Data Sources
 

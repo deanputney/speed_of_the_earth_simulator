@@ -89,11 +89,14 @@ export class CameraController {
 
         // Walking mode state
         this.isWalkingMode = false;
-        this.walkSpeed = 50; // feet per second
-        this.moveState = { forward: false, backward: false, left: false, right: false };
+        this.walkSpeed = 50; // feet per second (base speed)
+        this.runSpeedMultiplier = 5; // 5x speed when running
+        this.moveState = { forward: false, backward: false, left: false, right: false, running: false };
         this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
         this.velocity = new THREE.Vector3();
         this.direction = new THREE.Vector3();
+        this.transitionToEuler = null;
+        this.transitionFromEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
         // Jump state
         this.isJumping = false;
@@ -106,8 +109,8 @@ export class CameraController {
         this.initControls();
         this.setupWalkingControls();
 
-        // Set default view to elevated
-        this.setPreset('ELEVATED', false);
+        // Set default view to walking mode
+        this.setPreset('WALKING', false);
     }
 
     /**
@@ -170,6 +173,7 @@ export class CameraController {
                 case 's': this.moveState.backward = true; break;
                 case 'a': this.moveState.left = true; break;
                 case 'd': this.moveState.right = true; break;
+                case 'shift': this.moveState.running = true; break;
                 case ' ':
                     // Jump with spacebar (and don't also toggle the animation)
                     e.preventDefault();
@@ -190,6 +194,7 @@ export class CameraController {
                 case 's': this.moveState.backward = false; break;
                 case 'a': this.moveState.left = false; break;
                 case 'd': this.moveState.right = false; break;
+                case 'shift': this.moveState.running = false; break;
             }
         });
 
@@ -233,9 +238,11 @@ export class CameraController {
             this.controls.enabled = false;
             document.exitPointerLock();
             console.log('Walking mode: Use WASD to move, click to enable mouse look');
+            this.minimapControls?.show();
         } else {
             this.controls.enabled = true;
             document.exitPointerLock();
+            this.minimapControls?.hide();
         }
 
         if (animate && !this.isTransitioning) {
@@ -264,6 +271,30 @@ export class CameraController {
             // If entering walking mode, set initial look direction
             if (this.isWalkingMode) this.faceTarget(preset.target);
         }
+    }
+
+    /**
+     * Walk to a ground position (x, z), turning to the given orientation
+     */
+    teleportToPosition(position, euler, duration = 1.0) {
+        if (!this.isWalkingMode) {
+            this.setPreset('WALKING', false);
+        }
+        document.exitPointerLock();
+
+        this.isTransitioning = true;
+        this.transitionProgress = 0;
+        this.transitionStart = performance.now();
+        this.transitionDuration = duration;
+
+        this.transitionFromPos.copy(this.camera.position);
+        this.transitionToPos.copy(position)
+            .setY(this.installation.groundHeight(position.x, position.z) + this.eyeHeight);
+        this.transitionToEuler = euler.clone();
+        this.transitionFromEuler = this.euler.clone();
+
+        this.transitionFromFov = this.camera.fov;
+        this.transitionToFov = 75;
     }
 
     faceTarget(target) {
@@ -297,11 +328,27 @@ export class CameraController {
             this.camera.fov = this.transitionFromFov + (this.transitionToFov - this.transitionFromFov) * t;
             this.camera.updateProjectionMatrix();
 
+            // Interpolate orientation for teleport
+            if (this.transitionToEuler) {
+                this.euler.x = this.transitionFromEuler.x +
+                    (this.transitionToEuler.x - this.transitionFromEuler.x) * t;
+                this.euler.y = this.transitionFromEuler.y +
+                    (this.transitionToEuler.y - this.transitionFromEuler.y) * t;
+                this.camera.quaternion.setFromEuler(this.euler);
+            }
+
             if (this.transitionProgress >= 1) {
                 this.isTransitioning = false;
 
-                // If entering walking mode, set initial look direction
-                if (this.isWalkingMode) this.faceTarget(this.transitionToTarget);
+                if (this.transitionToEuler) {
+                    // Final orientation from teleport
+                    this.euler.copy(this.transitionToEuler);
+                    this.camera.quaternion.setFromEuler(this.euler);
+                    this.transitionToEuler = null;
+                } else if (this.isWalkingMode) {
+                    // Entering walking mode: look toward the preset's target
+                    this.faceTarget(this.transitionToTarget);
+                }
             }
         }
 
@@ -315,7 +362,9 @@ export class CameraController {
 
         // Handle walking mode
         if (this.isWalkingMode && !this.isTransitioning) {
-            const speed = this.walkSpeed * deltaTime;
+            // Apply run speed multiplier when shift is held
+            const speedMultiplier = this.moveState.running ? this.runSpeedMultiplier : 1;
+            const speed = this.walkSpeed * speedMultiplier * deltaTime;
 
             // Get camera direction
             this.direction.set(0, 0, 0);

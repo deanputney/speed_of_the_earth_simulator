@@ -598,3 +598,75 @@ input[type="date"].field-input {
 .preset-grid .camera-btn:hover {
     transform: none;
 }
+
+/* Brightness Controls */
+.brightness-controls-container {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.brightness-controls-container.hidden {
+    display: none;
+}
+
+.brightness-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.brightness-control label {
+    font-size: 13px;
+    white-space: nowrap;
+    min-width: 120px;
+}
+
+.brightness-slider {
+    flex: 1;
+    cursor: pointer;
+    accent-color: rgba(76, 175, 80, 1);
+}
+
+.brightness-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(76, 175, 80, 1);
+    min-width: 60px;
+    text-align: right;
+}
+
+/* Minimap Container */
+.minimap-container {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  width: 200px;
+  height: 200px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 900;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.3s ease;
+  display: none;
+}
+
+.minimap-container canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+
+.minimap-container canvas:active {
+  cursor: grabbing;
+}
+
+.minimap-container:hover {
+  border-color: rgba(76, 175, 80, 0.6);
+  box-shadow: 0 4px 20px rgba(76, 175, 80, 0.3);
+}

@@ -15,12 +15,20 @@ const MODES = [
     { id: 'converge-center', name: 'Converge Center', description: 'Both ends to middle' },
     { id: 'converge-point', name: 'Converge Point', description: 'Both ends to specific point' },
     { id: 'diverge-center', name: 'Diverge Center', description: 'Middle outward' },
-    { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' }
+    { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' },
+    { id: 'brightness-burst', name: 'Brightness Burst', description: '5 dim cycles (low brightness) followed by 3 bright cycles (high brightness), repeating continuously' },
+    { id: 'brightness-burst-realtime', name: 'Brightness Burst (Realtime)', description: '3 bright bursts every 15 minutes (night mode)' }
 ];
+
+const BURST_MODES = ['brightness-burst', 'brightness-burst-realtime'];
 
 const FAST_FACTOR = 5;      // Fast modes run 5x Earth speed
 const BLINK_PERIOD = 0.3;   // seconds per blink in blink-all
 const BLINK_COUNT = 3;
+
+// Brightness is in UI units; 200,000 is the standard flash
+export const DEFAULT_BRIGHTNESS = 200000;
+export const MAX_BRIGHTNESS = 500000;
 
 export class LightAnimation {
     /**
@@ -30,6 +38,16 @@ export class LightAnimation {
     constructor(installation, config) {
         this.installation = installation;
         this.FLASH_DURATION = 0.05; // seconds (50ms strobe effect)
+
+        // Set from main.js
+        this.timeOfDayController = null;
+        this.lightControls = null;
+        this.animationModeControls = null;
+
+        // Flash brightness, and the dim/bright levels for brightness burst modes
+        this.brightness = DEFAULT_BRIGHTNESS;
+        this.lowBrightness = 6000;
+        this.highBrightness = 200000;
 
         // Animation state
         this.currentTime = 0;
@@ -89,6 +107,8 @@ export class LightAnimation {
             case 'converge-point': this.updateConverge(this.convergencePoint); break;
             case 'diverge-center': this.updateDiverge(Math.floor(this.numLights / 2)); break;
             case 'diverge-point': this.updateDiverge(this.divergencePoint); break;
+            case 'brightness-burst': this.updateBrightnessBurst(); break;
+            case 'brightness-burst-realtime': this.updateBrightnessBurstRealtime(); break;
             default: this.updateSequential();
         }
     }
@@ -209,6 +229,117 @@ export class LightAnimation {
     }
 
     /**
+     * Brightness Burst: 5 dim cycles (lowBrightness) followed by 3 bright cycles (highBrightness)
+     */
+    updateBrightnessBurst() {
+        const cycleTime = this.currentTime % this.cycleDuration;
+
+        if (this.modeState.cycleCount === undefined) {
+            this.modeState.cycleCount = 0;
+            this.modeState.lastCycleTime = 0;
+            this.applyBurstCycle();
+        } else if (cycleTime < this.modeState.lastCycleTime) {
+            // Cycle just completed; after 5 dim + 3 bright cycles, start over
+            this.modeState.cycleCount = (this.modeState.cycleCount + 1) % 8;
+            this.applyBurstCycle();
+        }
+        this.modeState.lastCycleTime = cycleTime;
+
+        this.updateSequential();
+    }
+
+    applyBurstCycle() {
+        const bright = this.modeState.cycleCount >= 5;
+        const level = bright ? this.highBrightness : this.lowBrightness;
+        const statusText = `Cycle ${this.modeState.cycleCount + 1}/8 - ${bright ? 'BRIGHT' : 'DIM'} (${level})`;
+        console.log(`${bright ? '☀️' : '🌙'} Brightness Burst: ${statusText}`);
+        this.setBrightness(level);
+        this.animationModeControls?.updateModeDescription(statusText);
+    }
+
+    /**
+     * Brightness Burst (Realtime): Every 15 minutes, do 3 bright bursts, otherwise dim
+     * Synchronized to system clock at :00, :15, :30, :45 minutes past each hour
+     */
+    updateBrightnessBurstRealtime() {
+        const QUARTER_HOUR = 900; // seconds
+        const BURST_WINDOW = 30;  // seconds at the start of each quarter hour
+
+        const now = new Date();
+        const totalSeconds = now.getMinutes() * 60 + now.getSeconds();
+        const currentQuarterHour = Math.floor(totalSeconds / QUARTER_HOUR); // 0-3
+        const secondsIntoQuarterHour = totalSeconds % QUARTER_HOUR;
+        const secondsUntilNextQuarterHour = QUARTER_HOUR - secondsIntoQuarterHour;
+
+        if (this.modeState.burstCycleCount === undefined) {
+            this.modeState.burstCycleCount = 0;
+            this.modeState.lastCycleTime = 0;
+            this.modeState.lastQuarterHour = currentQuarterHour;
+        }
+
+        // New quarter hour: start a burst sequence
+        if (currentQuarterHour !== this.modeState.lastQuarterHour) {
+            console.log(`⏰ Quarter hour boundary crossed! Now at :${String(Math.floor(totalSeconds / 60)).padStart(2, '0')} - Starting burst sequence`);
+            this.modeState.burstCycleCount = 0;
+        }
+        this.modeState.lastQuarterHour = currentQuarterHour;
+
+        // Count completed cycles during the burst window
+        const cycleTime = this.currentTime % this.cycleDuration;
+        if (cycleTime < this.modeState.lastCycleTime) {
+            this.modeState.burstCycleCount = secondsIntoQuarterHour < BURST_WINDOW
+                ? this.modeState.burstCycleCount + 1
+                : 0;
+        }
+        this.modeState.lastCycleTime = cycleTime;
+
+        // Bright for the first 3 cycles after each quarter hour, dim otherwise
+        const bright = secondsIntoQuarterHour < BURST_WINDOW && this.modeState.burstCycleCount < 3;
+        const level = bright ? this.highBrightness : this.lowBrightness;
+        if (this.brightness !== level) {
+            console.log(`⏰ Brightness Burst (Realtime): ${bright ? `☀️ BRIGHT (${level})` : `🌙 DIM (${level})`} - Cycle ${this.modeState.burstCycleCount + 1}/3`);
+            this.setBrightness(level);
+        }
+
+        // Countdown to the next quarter hour, e.g. "DIM - Next burst in: 07:12 (21:45)"
+        const nextQuarterMinutes = ((currentQuarterHour + 1) % 4) * 15;
+        const nextQuarterHour = currentQuarterHour === 3 ? (now.getHours() + 1) % 24 : now.getHours();
+        const nextQuarterText = `${nextQuarterHour}:${String(nextQuarterMinutes).padStart(2, '0')}`;
+        const countdownText = `${String(Math.floor(secondsUntilNextQuarterHour / 60)).padStart(2, '0')}:` +
+            `${String(Math.floor(secondsUntilNextQuarterHour % 60)).padStart(2, '0')}`;
+        this.animationModeControls?.updateModeDescription(
+            `${bright ? 'BRIGHT' : 'DIM'} - Next burst in: ${countdownText} (${nextQuarterText})`
+        );
+
+        this.updateSequential();
+    }
+
+    /**
+     * Flash brightness in UI units (6,000 = dim, 200,000 = standard)
+     */
+    setBrightness(brightness) {
+        this.brightness = Math.max(0, Math.min(MAX_BRIGHTNESS, brightness));
+        this.installation.setBrightness(this.brightness / DEFAULT_BRIGHTNESS);
+        this.lightControls?.updateUIFromAnimation();
+    }
+
+    /**
+     * Set low brightness value for brightness burst modes
+     * @param {number} brightness - Brightness value (0-100000)
+     */
+    setLowBrightness(brightness) {
+        this.lowBrightness = Math.max(0, Math.min(100000, brightness));
+    }
+
+    /**
+     * Set high brightness value for brightness burst modes
+     * @param {number} brightness - Brightness value (0-500000)
+     */
+    setHighBrightness(brightness) {
+        this.highBrightness = Math.max(0, Math.min(MAX_BRIGHTNESS, brightness));
+    }
+
+    /**
      * @param {number} multiplier - 1.0 = real-time, 0.5 = half speed, 2.0 = double speed
      */
     setSpeedMultiplier(multiplier) {
@@ -236,6 +367,11 @@ export class LightAnimation {
         this.animationMode = mode;
         this.currentTime = 0;
         this.modeState = {};
+
+        // Brightness burst is a night-time pattern
+        if (BURST_MODES.includes(mode)) {
+            this.timeOfDayController?.applyPreset('night');
+        }
     }
 
     clampIndex(point) {
@@ -262,6 +398,7 @@ export class LightAnimation {
             earthRotationSpeed: this.earthSpeed,
             numLights: this.numLights,
             spacing: this.spacing,
+            brightness: this.brightness,
             timeBetweenLights: this.timeBetweenLights,
             flashDuration: this.FLASH_DURATION,
             convergencePoint: this.convergencePoint,
