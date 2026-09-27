@@ -10,7 +10,7 @@ The **Site** tab sets where the installation is and how it's laid out:
 
 - **Location**
   - **Burning Man**, Black Rock Desert, NV: playa with distant mountain ranges. Timed to the published 1,156 ft/s.
-  - **Crissy Field**, San Francisco, CA: along the Golden Gate Promenade, aligned east–west, with the bay, the Golden Gate Bridge, the Marin Headlands, Alcatraz and the Presidio. Timed to the latitude's surface speed (~1,207 ft/s).
+  - **Crissy Field**, San Francisco, CA: along the Golden Gate Promenade, aligned east–west. Timed to the latitude's surface speed (~1,207 ft/s). Real terrain covers the Presidio, Fort Point, the Marin Headlands, Alcatraz, Angel Island and Mt. Tamalpais, and the Golden Gate Bridge and its approaches are placed from OpenStreetMap. The lights follow the ground.
 - **Spacing**: any value, with presets for 162 ft (Burning Man) and 83.33 ft (Crissy Field).
 - **Number of lights**: 2–120.
 - **Flash head height**: defaults to 10 ft.
@@ -65,6 +65,14 @@ Then open http://localhost:8000 in your browser. With [mise](https://mise.jdx.de
 | `installation.js` | Builds the row of fixtures and renders flash levels |
 | `lightAnimation.js` | Flash timing for each animation mode |
 | `environment.js` | Scenery for each site |
+| `terrain.js` | Elevation grid: height lookup and terrain mesh |
+| `crissyFieldTerrain.js` | Generated Crissy Field elevation data (see `scripts/build_crissy_terrain.py`) |
+| `crissyFieldGeography.js` | Promenade and Golden Gate Bridge positions from OpenStreetMap |
 | `solar.js` | Sun position, sunrise and sunset |
 | `timeOfDay.js` | Sky, ambient light and sun from the date and time |
 | `*Controls.js` | UI panels and keyboard/camera controls |
+
+## Data Sources
+
+- Crissy Field elevations: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium), derived from USGS 3DEP and other public sources. Rebuild with `python3 scripts/build_crissy_terrain.py` (needs numpy and Pillow).
+- Promenade and bridge alignment: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).

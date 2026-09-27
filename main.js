@@ -60,7 +60,10 @@ const installation = new Installation(scene);
 
 function buildInstallation() {
     const site = SITES[layout.siteId];
-    installation.build({ ...layout, travelBearing: site.travelBearing });
+    installation.build(
+        { ...layout, travelBearing: site.travelBearing },
+        (x, z) => environment.groundHeightAt(x, z)
+    );
 
     // Fit the sun's shadow camera to the row
     const reach = installation.length / 2 + 500;
@@ -72,6 +75,7 @@ function buildInstallation() {
     shadowCamera.updateProjectionMatrix();
 }
 
+environment.build(SITES[layout.siteId].environment);
 buildInstallation();
 
 // Light animation system
@@ -111,9 +115,9 @@ lightingTab.append(timeSection, sunSection);
 const sunControls = new SunControls(directionalLight, sunSection);
 const timeOfDayController = new TimeOfDayController(scene, ambientLight, directionalLight, sunControls, timeSection);
 
+// Site-wide settings (scenery is rebuilt separately, before the installation)
 function applySite() {
     const site = SITES[layout.siteId];
-    environment.build(site.environment);
     timeOfDayController.setSite(site);
     displayControls.setVisibility(site.visibilityMiles);
     document.title = `Speed of the Earth Simulator · ${site.name}`;
@@ -144,6 +148,7 @@ const siteControls = new SiteControls(
     (newLayout, siteChanged) => {
         layout = newLayout;
         if (siteChanged) {
+            environment.build(SITES[layout.siteId].environment);
             applySite();
         }
         applyLayout();

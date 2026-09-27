@@ -100,7 +100,8 @@ export class CameraController {
         this.verticalVelocity = 0;
         this.jumpSpeed = 30; // feet per second
         this.gravity = 60; // feet per second squared
-        this.groundLevel = 6;
+        this.eyeHeight = 6;
+        this.groundLevel = this.eyeHeight;
 
         this.initControls();
         this.setupWalkingControls();
@@ -337,6 +338,10 @@ export class CameraController {
             // Update position
             this.velocity.copy(this.direction).multiplyScalar(speed);
             this.camera.position.add(this.velocity);
+
+            // Follow the terrain
+            const { x, z } = this.camera.position;
+            this.groundLevel = this.installation.groundHeight(x, z) + this.eyeHeight;
 
             // Handle jumping and gravity
             if (this.isJumping || this.camera.position.y > this.groundLevel) {

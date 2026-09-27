@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { SF_COAST, MARIN_COAST, PROMENADE, GOLDEN_GATE } from './crissyFieldGeography.js';
+import { Terrain } from './terrain.js';
+import { CRISSY_FIELD_TERRAIN } from './crissyFieldTerrain.js';
+import { PROMENADE, GOLDEN_GATE, PALACE_OF_FINE_ARTS, ALCATRAZ } from './crissyFieldGeography.js';
 
 /**
  * Site scenery: ground, water, terrain and landmarks.
  *
  * Coordinates are feet relative to the center of the installation,
- * North = -Z, East = +X. Landmark positions are approximate but to scale.
+ * North = -Z, East = +X, y = 0 at ground level (desert) or sea level (Crissy Field).
  */
 
 const WORLD_EXTENT = 40000; // half-size of the ground, feet
@@ -55,139 +57,6 @@ function createNoiseTexture({ baseColor, noise, patchColor, patches, seed, repea
     texture.repeat.set(repeat, repeat);
     return texture;
 }
-
-/**
- * Flat polygon on the ground. Points are [x, z] pairs in world feet.
- * UVs are in feet, so textures should use repeat = 1 / tileSizeFeet.
- */
-function groundPolygon(points, material, y = 0) {
-    // ShapeGeometry lies in XY; rotating -90° about X maps shape y to world -z
-    const shape = new THREE.Shape(points.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const geometry = new THREE.ShapeGeometry(shape);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = y;
-    mesh.receiveShadow = true;
-    return mesh;
-}
-
-/**
- * Low-poly hill: a noisy half-ellipsoid.
- */
-function hill({ x, z, radiusX, radiusZ, height, material, seed, baseY = 0 }) {
-    const random = seededRandom(seed);
-    const geometry = new THREE.SphereGeometry(1, 28, 10, 0, Math.PI * 2, 0, Math.PI / 2);
-    const position = geometry.attributes.position;
-    // Jitter vertices (keeping the rim on the ground) for ridges and gullies
-    const offsets = new Map();
-    for (let i = 0; i < position.count; i++) {
-        const key = `${position.getX(i).toFixed(4)},${position.getY(i).toFixed(4)},${position.getZ(i).toFixed(4)}`;
-        if (!offsets.has(key)) offsets.set(key, 0.75 + random() * 0.5);
-        const y = position.getY(i);
-        if (y > 0.01) position.setY(i, y * offsets.get(key));
-    }
-    geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.scale.set(radiusX, height, radiusZ);
-    mesh.position.set(x, baseY, z);
-    return mesh;
-}
-
-function hillHeightAt(h, x, z) {
-    const u = (x - h.x) / h.radiusX;
-    const v = (z - h.z) / h.radiusZ;
-    const r = 1 - u * u - v * v;
-    return r > 0 ? h.height * Math.sqrt(r) : 0;
-}
-
-/**
- * Smooth landform with a flat top (plateau = fraction of the radius that is level).
- * Used where the bridge approaches meet the bluffs.
- */
-function moundHeightAt(m, x, z) {
-    const s = Math.hypot((x - m.x) / m.radiusX, (z - m.z) / m.radiusZ);
-    return m.height * (1 - THREE.MathUtils.smoothstep(s, m.plateau, 1));
-}
-
-function mound(m) {
-    const rings = 24;
-    const segments = 48;
-    const vertices = [];
-    const uvs = [];
-    const indices = [];
-    for (let i = 0; i <= rings; i++) {
-        const r = i / rings;
-        for (let j = 0; j < segments; j++) {
-            const angle = (j / segments) * Math.PI * 2;
-            const x = Math.cos(angle) * r * m.radiusX;
-            const z = Math.sin(angle) * r * m.radiusZ;
-            vertices.push(x, moundHeightAt(m, m.x + x, m.z + z), z);
-            // World-space feet, matching groundPolygon so textures line up
-            uvs.push(m.x + x, -(m.z + z));
-        }
-    }
-    for (let i = 0; i < rings; i++) {
-        for (let j = 0; j < segments; j++) {
-            const a = i * segments + j;
-            const b = i * segments + (j + 1) % segments;
-            const c = a + segments;
-            const d = b + segments;
-            indices.push(a, b, c, b, d, c);
-        }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-
-    const mesh = new THREE.Mesh(geometry, m.material);
-    mesh.position.set(m.x, 0, m.z);
-    mesh.receiveShadow = true;
-    return mesh;
-}
-
-function pointInPolygon(points, x, z) {
-    let inside = false;
-    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-        const [xi, zi] = points[i];
-        const [xj, zj] = points[j];
-        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-    }
-    return inside;
-}
-
-/**
- * Flat strip of constant width following a polyline of [x, z] points.
- */
-function ribbon(points, width, material, y = 0) {
-    const vertices = [];
-    const indices = [];
-    points.forEach(([x, z], i) => {
-        const [px, pz] = points[Math.max(0, i - 1)];
-        const [nx, nz] = points[Math.min(points.length - 1, i + 1)];
-        const length = Math.hypot(nx - px, nz - pz);
-        const ox = (-(nz - pz) / length) * width / 2;
-        const oz = ((nx - px) / length) * width / 2;
-        vertices.push(x + ox, y, z + oz, x - ox, y, z - oz);
-        if (i > 0) {
-            const k = i * 2;
-            indices.push(k - 2, k, k - 1, k - 1, k, k + 1);
-        }
-    });
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.receiveShadow = true;
-    return mesh;
-}
-
-/**
- * Ring of distant mountains on the horizon.
- */
 function mountainRing({ radius, depth, minHeight, maxHeight, color, seed }) {
     const random = seededRandom(seed);
     const segments = 180;
@@ -233,26 +102,79 @@ function mountainRing({ radius, depth, minHeight, maxHeight, color, seed }) {
 }
 
 /**
- * Stylized Golden Gate Bridge, built along local Z (south = +Z) with y = 0 at the water.
+ * Flat strip of constant width draped along a polyline of [x, z] points.
  */
-function goldenGateBridge() {
+function ribbon(points, width, material, groundHeight) {
+    // Subdivide so the strip follows the terrain between points
+    const dense = [];
+    points.forEach(([x, z], i) => {
+        if (i === 0) {
+            dense.push([x, z]);
+            return;
+        }
+        const [px, pz] = points[i - 1];
+        const steps = Math.max(1, Math.ceil(Math.hypot(x - px, z - pz) / 25));
+        for (let s = 1; s <= steps; s++) {
+            dense.push([px + (x - px) * s / steps, pz + (z - pz) * s / steps]);
+        }
+    });
+
+    const vertices = [];
+    const indices = [];
+    dense.forEach(([x, z], i) => {
+        const [px, pz] = dense[Math.max(0, i - 1)];
+        const [nx, nz] = dense[Math.min(dense.length - 1, i + 1)];
+        const length = Math.hypot(nx - px, nz - pz);
+        const ox = (-(nz - pz) / length) * width / 2;
+        const oz = ((nx - px) / length) * width / 2;
+        vertices.push(
+            x + ox, groundHeight(x + ox, z + oz) + 0.3, z + oz,
+            x - ox, groundHeight(x - ox, z - oz) + 0.3, z - oz
+        );
+        if (i > 0) {
+            const k = i * 2;
+            indices.push(k - 2, k, k - 1, k - 1, k, k + 1);
+        }
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+const BRIDGE = {
+    HALF_MAIN_SPAN: 2100,   // 4,200 ft main span
+    HALF_TOTAL: 3225,       // 1,125 ft side spans
+    TOWER_HEIGHT: 746,
+    DECK_TOP: 220,          // above the water
+    HALF_WIDTH: 45          // 90 ft wide deck
+};
+
+function bridgeMaterials() {
+    return {
+        orange: new THREE.MeshStandardMaterial({
+            color: 0xc0362c,
+            roughness: 0.6,
+            metalness: 0.2,
+            // Floodlit at night
+            emissive: 0x3a0c06
+        }),
+        concrete: new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.9 })
+    };
+}
+
+/**
+ * Stylized Golden Gate Bridge between its anchorages, built along local Z
+ * (south = +Z) with y = 0 at the water.
+ */
+function goldenGateBridge({ orange, concrete }) {
     const group = new THREE.Group();
     group.name = 'golden-gate-bridge';
 
-    const orange = new THREE.MeshStandardMaterial({
-        color: 0xc0362c,
-        roughness: 0.6,
-        metalness: 0.2,
-        // Floodlit at night
-        emissive: 0x3a0c06
-    });
-    const concrete = new THREE.MeshStandardMaterial({ color: 0x9a948a, roughness: 0.9 });
-
-    const HALF_MAIN_SPAN = 2100;   // 4,200 ft main span
-    const HALF_TOTAL = 3225;       // 1,125 ft side spans
-    const TOWER_HEIGHT = 746;
-    const DECK_TOP = 220;
-    const HALF_WIDTH = 45;         // 90 ft wide deck
+    const { HALF_MAIN_SPAN, HALF_TOTAL, TOWER_HEIGHT, DECK_TOP, HALF_WIDTH } = BRIDGE;
     const SADDLE = TOWER_HEIGHT - 10;
     const CABLE_LOW = DECK_TOP + 15;
 
@@ -263,8 +185,8 @@ function goldenGateBridge() {
         return mesh;
     };
 
-    // Deck, including short approaches onto land
-    box(HALF_WIDTH * 2, 25, (HALF_TOTAL + 1000) * 2, 0, DECK_TOP - 12.5, 0);
+    // Deck between the anchorages
+    box(HALF_WIDTH * 2, 25, HALF_TOTAL * 2, 0, DECK_TOP - 12.5, 0);
 
     // Towers: two legs joined by portal struts
     for (const z of [-HALF_MAIN_SPAN, HALF_MAIN_SPAN]) {
@@ -287,9 +209,9 @@ function goldenGateBridge() {
         }
     }
 
-    // Anchorages
+    // Anchorages (extend below the water/ground line so they sit on the slope)
     for (const z of [-HALF_TOTAL, HALF_TOTAL]) {
-        box(140, 260, 250, 0, 130, z, concrete);
+        box(140, 300, 250, 0, 110, z, concrete);
     }
 
     // Main cables: parabola across the main span, sagging chords on the side spans
@@ -330,9 +252,56 @@ function goldenGateBridge() {
 }
 
 /**
+ * Approach roadway from an anchorage to where it meets the ground, on piers where
+ * it's elevated. Points are world [x, z]; the deck grades evenly from `startTop`
+ * to just above the ground at the last point.
+ */
+function approachRoad(points, startTop, groundHeight, { orange, concrete }) {
+    const group = new THREE.Group();
+    const THICKNESS = 25;
+    const distances = [0];
+    for (let i = 1; i < points.length; i++) {
+        const [x0, z0] = points[i - 1];
+        const [x1, z1] = points[i];
+        distances.push(distances[i - 1] + Math.hypot(x1 - x0, z1 - z0));
+    }
+    const total = distances[distances.length - 1];
+    const [endX, endZ] = points[points.length - 1];
+    const endTop = groundHeight(endX, endZ) + 2;
+    const topAt = d => startTop + (endTop - startTop) * (d / total);
+
+    for (let i = 1; i < points.length; i++) {
+        const [x0, z0] = points[i - 1];
+        const [x1, z1] = points[i];
+        const length = distances[i] - distances[i - 1];
+        const top = topAt((distances[i - 1] + distances[i]) / 2);
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(BRIDGE.HALF_WIDTH * 2, THICKNESS, length + 4), orange);
+        deck.position.set((x0 + x1) / 2, top - THICKNESS / 2, (z0 + z1) / 2);
+        deck.rotation.y = Math.atan2(x1 - x0, z1 - z0);
+        group.add(deck);
+    }
+
+    // Piers every ~150 ft where the roadway is well above the ground
+    for (let d = 75; d < total; d += 150) {
+        const i = distances.findIndex(v => v >= d);
+        const t = (d - distances[i - 1]) / (distances[i] - distances[i - 1]);
+        const x = points[i - 1][0] + (points[i][0] - points[i - 1][0]) * t;
+        const z = points[i - 1][1] + (points[i][1] - points[i - 1][1]) * t;
+        const ground = Math.max(0, groundHeight(x, z));
+        const height = topAt(d) - THICKNESS - ground;
+        if (height < 10) continue;
+        const pier = new THREE.Mesh(new THREE.BoxGeometry(BRIDGE.HALF_WIDTH * 1.6, height, 16), concrete);
+        pier.position.set(x, ground + height / 2, z);
+        pier.rotation.y = Math.atan2(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+        group.add(pier);
+    }
+    return group;
+}
+
+/**
  * Scatter boxes as one instanced mesh, skipping spots where accept(x, z) is false.
  */
-function buildings({ count, area, footprint, height, colors, seed, emissive = 0x000000, accept = () => true }) {
+function buildings({ count, area, footprint, height, colors, seed, groundHeight, accept, emissive = 0x000000 }) {
     const random = seededRandom(seed);
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     geometry.translate(0, 0.5, 0);
@@ -347,10 +316,11 @@ function buildings({ count, area, footprint, height, colors, seed, emissive = 0x
         const z = area.minZ + random() * (area.maxZ - area.minZ);
         const w = footprint[0] + random() * (footprint[1] - footprint[0]);
         const d = footprint[0] + random() * (footprint[1] - footprint[0]);
-        const h = height(random());
+        const h = height(random(), x, z);
         const tint = colors[Math.floor(random() * colors.length)];
         if (!accept(x, z)) continue;
-        matrix.makeScale(w, h, d).setPosition(x, 0, z);
+        // Sink the base a little so buildings on slopes don't float
+        matrix.makeScale(w, h + 10, d).setPosition(x, groundHeight(x, z) - 10, z);
         mesh.setMatrixAt(placed, matrix);
         mesh.setColorAt(placed, color.setHex(tint));
         placed++;
@@ -412,75 +382,78 @@ function buildDesert(group) {
     }));
 }
 
-function buildCrissyField(group) {
-    const WATER_Y = -6;
+let crissyTerrain = null;
+function getCrissyTerrain() {
+    crissyTerrain ??= new Terrain(CRISSY_FIELD_TERRAIN);
+    return crissyTerrain;
+}
 
-    // San Francisco Bay and the Golden Gate
+// Ground cover, by region, for the terrain's vertex colors
+const LAND_COLORS = {
+    seabed: new THREE.Color(0x6b6450),
+    sand: new THREE.Color(0xd8cba8),
+    crissy: new THREE.Color(0x86934f),
+    presidio: new THREE.Color(0x5a7045),
+    city: new THREE.Color(0x9c9b8e),
+    marin: new THREE.Color(0x9a9258),
+    island: new THREE.Color(0x7b8350),
+    cliff: new THREE.Color(0x8a7d66)
+};
+
+function landColor(x, z, height, slope, stepsToWater, color) {
+    if (height <= 0) {
+        color.copy(LAND_COLORS.seabed);
+        return;
+    }
+    // Low ground next to the water is beach, except along the Marina's seawalls
+    const seawall = x > 2600 && z > -1500 && z < 6000;
+    if (height < 11 && stepsToWater <= 3 && !seawall) {
+        color.copy(LAND_COLORS.sand);
+        return;
+    }
+    if (z < -6500) {
+        color.copy(x > 5000 ? LAND_COLORS.island : LAND_COLORS.marin);
+    } else if (x > 2600) {
+        color.copy(LAND_COLORS.city);
+    } else if ((x < -1000 && z > 700) || (x < -3000 && z > -1300)) {
+        color.copy(LAND_COLORS.presidio);
+    } else {
+        color.copy(LAND_COLORS.crissy);
+    }
+    // Steep bluffs and cliffs show bare earth
+    color.lerp(LAND_COLORS.cliff, THREE.MathUtils.smoothstep(slope, 0.12, 0.4));
+}
+
+function buildCrissyField(group) {
+    const terrain = getCrissyTerrain();
+    const groundHeight = (x, z) => Math.max(0, terrain.heightAt(x, z));
+    const onLand = (x, z) => terrain.heightAt(x, z) > 3;
+
+    // San Francisco Bay, the Golden Gate and the Pacific at sea level
     const water = new THREE.Mesh(
         new THREE.PlaneGeometry(WORLD_EXTENT * 3, WORLD_EXTENT * 3),
         new THREE.MeshStandardMaterial({ color: 0x3d6f8c, roughness: 0.35, metalness: 0 })
     );
     water.rotation.x = -Math.PI / 2;
-    water.position.y = WATER_Y;
     group.add(water);
 
-    const grass = new THREE.MeshStandardMaterial({
-        map: createNoiseTexture({
-            baseColor: '#7d8a4e',
-            noise: 40,
-            patchColor: 'rgba(150, 140, 80, 0.25)',
-            patches: 30,
-            seed: 2,
-            repeat: 1 / 250
+    // Real terrain: Crissy Field, the Presidio, Marin Headlands, the islands and Mt. Tam
+    const ground = terrain.createMesh(
+        new THREE.MeshStandardMaterial({
+            map: createNoiseTexture({
+                baseColor: '#e8e8e8',
+                noise: 34,
+                patchColor: 'rgba(0, 0, 0, 0.06)',
+                patches: 30,
+                seed: 2,
+                repeat: 1 / 250
+            }),
+            vertexColors: true,
+            roughness: 0.95
         }),
-        roughness: 0.95
-    });
-    const marinGrass = new THREE.MeshStandardMaterial({ color: 0x75794a, roughness: 0.95 });
-
-    // San Francisco (land south of the shore) and the Marin Headlands
-    const [sfWest] = SF_COAST;
-    const sfEast = SF_COAST[SF_COAST.length - 1];
-    const sfLand = [...SF_COAST, [sfEast[0] + 2000, WORLD_EXTENT], [sfWest[0] - 1000, WORLD_EXTENT]];
-    group.add(groundPolygon(sfLand, grass));
-
-    const marinNorth = MARIN_COAST[MARIN_COAST.length - 1];
-    const marinLand = [
-        ...MARIN_COAST,
-        [marinNorth[0], -WORLD_EXTENT], [-WORLD_EXTENT, -WORLD_EXTENT],
-        [-WORLD_EXTENT, -26000], [-32300, -20400] // Pacific coast toward Muir Beach
-    ];
-    group.add(groundPolygon(marinLand, marinGrass));
-
-    // Crissy Field beach: from the waterline to just north of the promenade
-    const sand = new THREE.MeshStandardMaterial({
-        map: createNoiseTexture({
-            baseColor: '#dccfb0',
-            noise: 25,
-            patchColor: 'rgba(190, 170, 130, 0.15)',
-            patches: 20,
-            seed: 3,
-            repeat: 1 / 150
-        }),
-        roughness: 0.9,
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1
-    });
-    const promenadeZ = x => {
-        for (let i = 1; i < PROMENADE.length; i++) {
-            const [x1, z1] = PROMENADE[i - 1];
-            const [x2, z2] = PROMENADE[i];
-            if (x >= x1 && x <= x2) return z1 + (z2 - z1) * (x - x1) / (x2 - x1);
-        }
-        return null;
-    };
-    const beachShore = SF_COAST.filter(([x, z]) => x >= -3430 && x <= 2020 && z < 0);
-    const beachInner = beachShore.map(([x, z]) => {
-        const pathZ = promenadeZ(x);
-        const inner = pathZ === null ? z + 120 : pathZ - 14;
-        return [x, Math.min(z + 260, Math.max(z + 40, inner))];
-    }).reverse();
-    group.add(groundPolygon([...beachShore, ...beachInner], sand));
+        landColor
+    );
+    group.add(ground);
 
     // Golden Gate Promenade (the lights run straight east-west beside it)
     group.add(ribbon(PROMENADE, 16, new THREE.MeshStandardMaterial({
@@ -489,111 +462,84 @@ function buildCrissyField(group) {
         polygonOffset: true,
         polygonOffsetFactor: -2,
         polygonOffsetUnits: -2
-    })));
+    }), groundHeight));
 
     // Golden Gate Bridge, positioned from its south tower and deck bearing
-    const bridge = goldenGateBridge();
-    const deckTurn = THREE.MathUtils.degToRad(360 - GOLDEN_GATE.bearing); // west of north
+    const materials = bridgeMaterials();
+    const bridge = goldenGateBridge(materials);
+    const turn = THREE.MathUtils.degToRad(360 - GOLDEN_GATE.bearing); // west of north
+    const along = [Math.sin(turn), Math.cos(turn)]; // unit vector toward the south end
     const [towerX, towerZ] = GOLDEN_GATE.southTower;
-    bridge.position.set(towerX - Math.sin(deckTurn) * 2100, WATER_Y, towerZ - Math.cos(deckTurn) * 2100);
-    bridge.rotation.y = deckTurn;
+    const center = [towerX - along[0] * BRIDGE.HALF_MAIN_SPAN, towerZ - along[1] * BRIDGE.HALF_MAIN_SPAN];
+    bridge.position.set(center[0], 0, center[1]);
+    bridge.rotation.y = turn;
     group.add(bridge);
 
-    // Bluffs where the approaches meet land: the toll plaza above Fort Point,
-    // and the Marin hillside the roadway cuts into
-    const bluffs = [
-        { x: -3950, z: -1100, radiusX: 700, radiusZ: 1000, height: 212, plateau: 0.4, material: grass },
-        { x: -5500, z: -10000, radiusX: 1500, radiusZ: 1400, height: 800, plateau: 0.1, material: marinGrass }
+    // US-101 approaches, from each anchorage to the ground
+    const anchorage = sign => [
+        center[0] + sign * along[0] * BRIDGE.HALF_TOTAL,
+        center[1] + sign * along[1] * BRIDGE.HALF_TOTAL
     ];
-    bluffs.forEach(m => group.add(mound(m)));
+    group.add(approachRoad([anchorage(1), ...GOLDEN_GATE.southApproach], BRIDGE.DECK_TOP, groundHeight, materials));
+    group.add(approachRoad([anchorage(-1), ...GOLDEN_GATE.northApproach], BRIDGE.DECK_TOP, groundHeight, materials));
 
-    const presidio = new THREE.MeshLambertMaterial({ color: 0x4a6440, flatShading: true });
-    const marin = new THREE.MeshLambertMaterial({ color: 0x75794a, flatShading: true });
-
-    // Marin Headlands, Wolfback Ridge and Mt. Tamalpais
-    [
-        { x: -10000, z: -9800, radiusX: 3200, radiusZ: 2400, height: 920, seed: 12 },
-        { x: -16500, z: -9500, radiusX: 5000, radiusZ: 3500, height: 800, seed: 13 },
-        { x: -6000, z: -15000, radiusX: 2000, radiusZ: 3500, height: 900, seed: 14 },
-        { x: -30000, z: -38000, radiusX: 14000, radiusZ: 8000, height: 2571, seed: 17 }
-    ].forEach(h => group.add(hill({ ...h, material: marin })));
-
-    // Islands and the Tiburon peninsula
-    const island = new THREE.MeshLambertMaterial({ color: 0x5d6b45, flatShading: true });
-    [
-        { x: 2500, z: -21500, radiusX: 4500, radiusZ: 3000, height: 600, seed: 15 },
-        { x: 8700, z: -20460, radiusX: 3500, radiusZ: 3000, height: 788, seed: 16 },
-        { x: 11460, z: -8000, radiusX: 900, radiusZ: 400, height: 110, seed: 18 }
-    ].forEach(h => group.add(hill({ ...h, material: island, baseY: WATER_Y })));
-
-    const alcatraz = buildings({
-        count: 4,
-        area: { minX: 11300, maxX: 11600, minZ: -8100, maxZ: -7900 },
-        footprint: [60, 250],
-        height: () => 60,
-        colors: [0xd8d2c4],
-        seed: 19
-    });
-    alcatraz.position.y = WATER_Y + 90;
-    group.add(alcatraz);
-
-    // Presidio hills, Lincoln Park and Pacific Heights to the south
-    const heights = new THREE.MeshLambertMaterial({ color: 0x8a8f80, flatShading: true });
-    const southHills = [
-        { x: -2800, z: 3800, radiusX: 2500, radiusZ: 2200, height: 330, material: presidio, seed: 21 },
-        { x: -200, z: 5200, radiusX: 2800, radiusZ: 2200, height: 280, material: presidio, seed: 22 },
-        { x: -10000, z: 8000, radiusX: 3000, radiusZ: 1800, height: 250, material: presidio, seed: 27 },
-        { x: 6500, z: 6200, radiusX: 5000, radiusZ: 2600, height: 370, material: heights, seed: 23 }
-    ];
-    southHills.forEach(h => group.add(hill(h)));
-
-    const onSFLand = (x, z) => pointInPolygon(sfLand, x, z);
-    const groundHeight = (x, z) => Math.max(
-        0,
-        ...southHills.map(h => hillHeightAt(h, x, z)),
-        ...bluffs.map(m => moundHeightAt(m, x, z))
-    );
-
-    // Presidio forest, leaving the old airfield open
+    // Presidio forest on the hills behind the airfield
     group.add(trees({
-        count: 900,
-        area: { minX: -5500, maxX: 1500, minZ: 600, maxZ: 6000 },
+        count: 1200,
+        area: { minX: -6500, maxX: -500, minZ: -1400, maxZ: 6000 },
         groundHeight,
-        accept: (x, z) => onSFLand(x, z) && !(x > -3000 && z < 800),
+        accept: (x, z) => terrain.heightAt(x, z) > 40 && !(x > -3600 && z < 700),
         seed: 24
     }));
 
-    // Marina District
+    // Marina District, Pacific Heights and downtown
     group.add(buildings({
-        count: 350,
-        area: { minX: 2800, maxX: 9500, minZ: 800, maxZ: 3200 },
+        count: 700,
+        area: { minX: 2800, maxX: 14000, minZ: 800, maxZ: 9000 },
         footprint: [40, 90],
         height: r => 25 + r * 25,
         colors: [0xe8e0d0, 0xf0ece4, 0xd9cdb8, 0xe6d5c0, 0xcfd6d9],
         emissive: 0x1a140a,
-        accept: onSFLand,
+        groundHeight,
+        accept: onLand,
         seed: 25
     }));
-
-    // Downtown skyline beyond Russian Hill
     group.add(buildings({
-        count: 140,
-        area: { minX: 15500, maxX: 21000, minZ: 2000, maxZ: 7500 },
+        count: 160,
+        area: { minX: 15500, maxX: 21500, minZ: 1500, maxZ: 8000 },
         footprint: [80, 160],
         height: r => 80 + Math.pow(r, 3) * 900,
         colors: [0xb8bcc0, 0xd0d0cc, 0x9aa3ab, 0xc8c0b0],
         emissive: 0x1a1810,
-        accept: onSFLand,
+        groundHeight,
+        accept: onLand,
         seed: 26
     }));
 
+    // Alcatraz cellhouse
+    const [alcatrazX, alcatrazZ] = ALCATRAZ;
+    group.add(buildings({
+        count: 4,
+        area: { minX: alcatrazX - 200, maxX: alcatrazX + 200, minZ: alcatrazZ - 120, maxZ: alcatrazZ + 120 },
+        footprint: [60, 250],
+        height: () => 50,
+        colors: [0xd8d2c4],
+        groundHeight,
+        accept: (x, z) => terrain.heightAt(x, z) > 40,
+        seed: 19
+    }));
+
     // Palace of Fine Arts rotunda
+    const [palaceX, palaceZ] = PALACE_OF_FINE_ARTS;
+    const palaceY = groundHeight(palaceX, palaceZ);
     const palaceMaterial = new THREE.MeshStandardMaterial({ color: 0xc9a57a, roughness: 0.8 });
     const rotunda = new THREE.Mesh(new THREE.CylinderGeometry(55, 60, 90, 16), palaceMaterial);
-    rotunda.position.set(4150, 45, 700);
+    rotunda.position.set(palaceX, palaceY + 45, palaceZ);
     const dome = new THREE.Mesh(new THREE.SphereGeometry(55, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), palaceMaterial);
-    dome.position.set(4150, 90, 700);
+    dome.position.set(palaceX, palaceY + 90, palaceZ);
     group.add(rotunda, dome);
+
+    return groundHeight;
 }
 
 export class Environment {
@@ -601,15 +547,24 @@ export class Environment {
         this.group = new THREE.Group();
         this.group.name = 'environment';
         scene.add(this.group);
+        this.groundHeight = () => 0;
     }
 
     build(environmentId) {
         this.clear();
         if (environmentId === 'crissy-field') {
-            buildCrissyField(this.group);
+            this.groundHeight = buildCrissyField(this.group);
         } else {
             buildDesert(this.group);
+            this.groundHeight = () => 0;
         }
+    }
+
+    /**
+     * Height of the ground in feet at a world position
+     */
+    groundHeightAt(x, z) {
+        return this.groundHeight(x, z);
     }
 
     clear() {

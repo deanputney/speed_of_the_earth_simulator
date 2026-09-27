@@ -69,12 +69,14 @@ export class Installation {
         // Unit vector the wave travels along, and the horizontal vector to its left
         this.direction = new THREE.Vector3(0, 0, 1);
         this.side = new THREE.Vector3(1, 0, 0);
+        this.groundHeight = () => 0;
 
         // Resources shared by every fixture
         this.glowTexture = createGlowTexture();
         this.poolTexture = createPoolTexture();
         // Slightly larger than the corona so the soft edge falls at ~50 ft
-        this.poolGeometry = new THREE.PlaneGeometry(CORONA_RADIUS * 2.2, CORONA_RADIUS * 2.2);
+        this.poolGeometry = new THREE.PlaneGeometry(CORONA_RADIUS * 2.2, CORONA_RADIUS * 2.2, 16, 16)
+            .rotateX(-Math.PI / 2);
         this.poleMaterial = new THREE.MeshStandardMaterial({
             color: 0x666666,
             roughness: 0.7,
@@ -83,7 +85,8 @@ export class Installation {
             emissiveIntensity: 0.2
         });
         this.bulbGeometry = new THREE.SphereGeometry(0.8, 16, 16);
-        this.circleGeometry = new THREE.RingGeometry(CORONA_RADIUS - 0.5, CORONA_RADIUS + 0.5, 64);
+        this.circleGeometry = new THREE.RingGeometry(CORONA_RADIUS - 0.5, CORONA_RADIUS + 0.5, 64)
+            .rotateX(-Math.PI / 2);
         this.circleMaterial = new THREE.MeshBasicMaterial({
             color: 0x00ff00,
             side: THREE.DoubleSide,
@@ -104,13 +107,25 @@ export class Installation {
 
     /**
      * World position of a point `along` feet from the center of the row,
-     * `side` feet to the left of the line and `height` feet up.
+     * `side` feet to the left of the line and `height` feet above the ground.
      */
     pointAt(along, height = 0, side = 0, target = new THREE.Vector3()) {
-        return target
-            .copy(this.direction).multiplyScalar(along)
-            .addScaledVector(this.side, side)
-            .setY(height);
+        target.copy(this.direction).multiplyScalar(along).addScaledVector(this.side, side);
+        return target.setY(this.groundHeight(target.x, target.z) + height);
+    }
+
+    /**
+     * Copy of a flat ground-level geometry, draped over the terrain around `base`
+     */
+    drape(geometry, base, lift) {
+        const draped = geometry.clone();
+        const position = draped.attributes.position;
+        for (let k = 0; k < position.count; k++) {
+            const ground = this.groundHeight(base.x + position.getX(k), base.z + position.getZ(k));
+            position.setY(k, ground - base.y + lift);
+        }
+        this.buildResources.push(draped);
+        return draped;
     }
 
     alongForIndex(index) {
@@ -119,13 +134,15 @@ export class Installation {
 
     /**
      * @param {object} layout - { numLights, spacing, headHeight, travelBearing }
+     * @param {function} groundHeight - (x, z) => ground elevation in feet
      */
-    build({ numLights, spacing, headHeight, travelBearing }) {
+    build({ numLights, spacing, headHeight, travelBearing }, groundHeight = () => 0) {
         this.clear();
 
         this.numLights = numLights;
         this.spacing = spacing;
         this.headHeight = headHeight;
+        this.groundHeight = groundHeight;
 
         // Bearing: 0 = North (-Z), 90 = East (+X)
         const bearing = travelBearing * Math.PI / 180;
@@ -137,10 +154,10 @@ export class Installation {
 
         for (let i = 0; i < numLights; i++) {
             const base = this.pointAt(this.alongForIndex(i));
-            const head = base.clone().setY(headHeight);
+            const head = base.clone().setY(base.y + headHeight);
 
             const pole = new THREE.Mesh(poleGeometry, this.poleMaterial);
-            pole.position.copy(base).setY(headHeight / 2);
+            pole.position.copy(base).setY(base.y + headHeight / 2);
             pole.castShadow = true;
             pole.receiveShadow = true;
             this.group.add(pole);
@@ -157,9 +174,8 @@ export class Installation {
                 polygonOffsetFactor: -4,
                 polygonOffsetUnits: -4
             });
-            const pool = new THREE.Mesh(this.poolGeometry, poolMaterial);
-            pool.rotation.x = -Math.PI / 2;
-            pool.position.copy(base).setY(0.05);
+            const pool = new THREE.Mesh(this.drape(this.poolGeometry, base, 0.3), poolMaterial);
+            pool.position.copy(base);
             this.group.add(pool);
             this.buildResources.push(poolMaterial);
 
@@ -205,9 +221,8 @@ export class Installation {
             this.group.add(star);
             this.buildResources.push(starMaterial);
 
-            const scaleCircle = new THREE.Mesh(this.circleGeometry, this.circleMaterial);
-            scaleCircle.rotation.x = -Math.PI / 2;
-            scaleCircle.position.copy(base).setY(0.1);
+            const scaleCircle = new THREE.Mesh(this.drape(this.circleGeometry, base, 0.4), this.circleMaterial);
+            scaleCircle.position.copy(base);
             scaleCircle.visible = this.scaleCirclesVisible;
             this.group.add(scaleCircle);
 
