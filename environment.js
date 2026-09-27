@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SF_COAST, MARIN_COAST, PROMENADE, GOLDEN_GATE } from './crissyFieldGeography.js';
 
 /**
  * Site scenery: ground, water, terrain and landmarks.
@@ -98,6 +99,90 @@ function hillHeightAt(h, x, z) {
     const v = (z - h.z) / h.radiusZ;
     const r = 1 - u * u - v * v;
     return r > 0 ? h.height * Math.sqrt(r) : 0;
+}
+
+/**
+ * Smooth landform with a flat top (plateau = fraction of the radius that is level).
+ * Used where the bridge approaches meet the bluffs.
+ */
+function moundHeightAt(m, x, z) {
+    const s = Math.hypot((x - m.x) / m.radiusX, (z - m.z) / m.radiusZ);
+    return m.height * (1 - THREE.MathUtils.smoothstep(s, m.plateau, 1));
+}
+
+function mound(m) {
+    const rings = 24;
+    const segments = 48;
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
+    for (let i = 0; i <= rings; i++) {
+        const r = i / rings;
+        for (let j = 0; j < segments; j++) {
+            const angle = (j / segments) * Math.PI * 2;
+            const x = Math.cos(angle) * r * m.radiusX;
+            const z = Math.sin(angle) * r * m.radiusZ;
+            vertices.push(x, moundHeightAt(m, m.x + x, m.z + z), z);
+            // World-space feet, matching groundPolygon so textures line up
+            uvs.push(m.x + x, -(m.z + z));
+        }
+    }
+    for (let i = 0; i < rings; i++) {
+        for (let j = 0; j < segments; j++) {
+            const a = i * segments + j;
+            const b = i * segments + (j + 1) % segments;
+            const c = a + segments;
+            const d = b + segments;
+            indices.push(a, b, c, b, d, c);
+        }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geometry, m.material);
+    mesh.position.set(m.x, 0, m.z);
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+function pointInPolygon(points, x, z) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const [xi, zi] = points[i];
+        const [xj, zj] = points[j];
+        if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+}
+
+/**
+ * Flat strip of constant width following a polyline of [x, z] points.
+ */
+function ribbon(points, width, material, y = 0) {
+    const vertices = [];
+    const indices = [];
+    points.forEach(([x, z], i) => {
+        const [px, pz] = points[Math.max(0, i - 1)];
+        const [nx, nz] = points[Math.min(points.length - 1, i + 1)];
+        const length = Math.hypot(nx - px, nz - pz);
+        const ox = (-(nz - pz) / length) * width / 2;
+        const oz = ((nx - px) / length) * width / 2;
+        vertices.push(x + ox, y, z + oz, x - ox, y, z - oz);
+        if (i > 0) {
+            const k = i * 2;
+            indices.push(k - 2, k, k - 1, k - 1, k, k + 1);
+        }
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.receiveShadow = true;
+    return mesh;
 }
 
 /**
@@ -245,9 +330,9 @@ function goldenGateBridge() {
 }
 
 /**
- * Scatter boxes as one instanced mesh.
+ * Scatter boxes as one instanced mesh, skipping spots where accept(x, z) is false.
  */
-function buildings({ count, area, footprint, height, colors, seed, emissive = 0x000000 }) {
+function buildings({ count, area, footprint, height, colors, seed, emissive = 0x000000, accept = () => true }) {
     const random = seededRandom(seed);
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     geometry.translate(0, 0.5, 0);
@@ -256,20 +341,25 @@ function buildings({ count, area, footprint, height, colors, seed, emissive = 0x
     const matrix = new THREE.Matrix4();
     const color = new THREE.Color();
 
-    for (let i = 0; i < count; i++) {
+    let placed = 0;
+    for (let attempt = 0; attempt < count * 4 && placed < count; attempt++) {
         const x = area.minX + random() * (area.maxX - area.minX);
         const z = area.minZ + random() * (area.maxZ - area.minZ);
         const w = footprint[0] + random() * (footprint[1] - footprint[0]);
         const d = footprint[0] + random() * (footprint[1] - footprint[0]);
         const h = height(random());
+        const tint = colors[Math.floor(random() * colors.length)];
+        if (!accept(x, z)) continue;
         matrix.makeScale(w, h, d).setPosition(x, 0, z);
-        mesh.setMatrixAt(i, matrix);
-        mesh.setColorAt(i, color.setHex(colors[Math.floor(random() * colors.length)]));
+        mesh.setMatrixAt(placed, matrix);
+        mesh.setColorAt(placed, color.setHex(tint));
+        placed++;
     }
+    mesh.count = placed;
     return mesh;
 }
 
-function trees({ count, area, hills, seed }) {
+function trees({ count, area, groundHeight, accept, seed }) {
     const random = seededRandom(seed);
     const geometry = new THREE.ConeGeometry(14, 60, 6);
     geometry.translate(0, 30, 0);
@@ -277,14 +367,17 @@ function trees({ count, area, hills, seed }) {
     const mesh = new THREE.InstancedMesh(geometry, material, count);
     const matrix = new THREE.Matrix4();
 
-    for (let i = 0; i < count; i++) {
+    let placed = 0;
+    for (let attempt = 0; attempt < count * 4 && placed < count; attempt++) {
         const x = area.minX + random() * (area.maxX - area.minX);
         const z = area.minZ + random() * (area.maxZ - area.minZ);
         const scale = 0.6 + random() * 0.8;
-        const y = Math.max(0, ...hills.map(h => hillHeightAt(h, x, z))) - 4;
-        matrix.makeScale(scale, scale, scale).setPosition(x, y, z);
-        mesh.setMatrixAt(i, matrix);
+        if (!accept(x, z)) continue;
+        matrix.makeScale(scale, scale, scale).setPosition(x, groundHeight(x, z) - 4, z);
+        mesh.setMatrixAt(placed, matrix);
+        placed++;
     }
+    mesh.count = placed;
     return mesh;
 }
 
@@ -322,7 +415,7 @@ function buildDesert(group) {
 function buildCrissyField(group) {
     const WATER_Y = -6;
 
-    // San Francisco Bay
+    // San Francisco Bay and the Golden Gate
     const water = new THREE.Mesh(
         new THREE.PlaneGeometry(WORLD_EXTENT * 3, WORLD_EXTENT * 3),
         new THREE.MeshStandardMaterial({ color: 0x3d6f8c, roughness: 0.35, metalness: 0 })
@@ -330,19 +423,6 @@ function buildCrissyField(group) {
     water.rotation.x = -Math.PI / 2;
     water.position.y = WATER_Y;
     group.add(water);
-
-    // Northern shoreline of San Francisco, west to east
-    const shoreline = [
-        [-WORLD_EXTENT, 4000], [-16000, 800], [-9000, -1900], [-6000, -2300],
-        [-4100, -2150], [-3600, -1300], [-2500, -450], [0, -330],
-        [4000, -350], [9000, -300], [WORLD_EXTENT, -300]
-    ];
-    const BEACH_WIDTH = 220;
-    const beachWest = 2;  // shoreline index where Crissy's beach begins
-    const beachEast = 8;
-    const innerShore = shoreline.map(([x, z], i) =>
-        (i >= beachWest && i <= beachEast) ? [x, z + BEACH_WIDTH] : [x, z]
-    );
 
     const grass = new THREE.MeshStandardMaterial({
         map: createNoiseTexture({
@@ -355,11 +435,23 @@ function buildCrissyField(group) {
         }),
         roughness: 0.95
     });
-    group.add(groundPolygon(
-        [...innerShore, [WORLD_EXTENT, WORLD_EXTENT], [-WORLD_EXTENT, WORLD_EXTENT]],
-        grass
-    ));
+    const marinGrass = new THREE.MeshStandardMaterial({ color: 0x75794a, roughness: 0.95 });
 
+    // San Francisco (land south of the shore) and the Marin Headlands
+    const [sfWest] = SF_COAST;
+    const sfEast = SF_COAST[SF_COAST.length - 1];
+    const sfLand = [...SF_COAST, [sfEast[0] + 2000, WORLD_EXTENT], [sfWest[0] - 1000, WORLD_EXTENT]];
+    group.add(groundPolygon(sfLand, grass));
+
+    const marinNorth = MARIN_COAST[MARIN_COAST.length - 1];
+    const marinLand = [
+        ...MARIN_COAST,
+        [marinNorth[0], -WORLD_EXTENT], [-WORLD_EXTENT, -WORLD_EXTENT],
+        [-WORLD_EXTENT, -26000], [-32300, -20400] // Pacific coast toward Muir Beach
+    ];
+    group.add(groundPolygon(marinLand, marinGrass));
+
+    // Crissy Field beach: from the waterline to just north of the promenade
     const sand = new THREE.MeshStandardMaterial({
         map: createNoiseTexture({
             baseColor: '#dccfb0',
@@ -369,49 +461,71 @@ function buildCrissyField(group) {
             seed: 3,
             repeat: 1 / 150
         }),
-        roughness: 0.9
+        roughness: 0.9,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
     });
-    const beachOuter = shoreline.slice(beachWest, beachEast + 1);
-    const beachInner = innerShore.slice(beachWest, beachEast + 1).reverse();
-    group.add(groundPolygon([...beachOuter, ...beachInner], sand));
+    const promenadeZ = x => {
+        for (let i = 1; i < PROMENADE.length; i++) {
+            const [x1, z1] = PROMENADE[i - 1];
+            const [x2, z2] = PROMENADE[i];
+            if (x >= x1 && x <= x2) return z1 + (z2 - z1) * (x - x1) / (x2 - x1);
+        }
+        return null;
+    };
+    const beachShore = SF_COAST.filter(([x, z]) => x >= -3430 && x <= 2020 && z < 0);
+    const beachInner = beachShore.map(([x, z]) => {
+        const pathZ = promenadeZ(x);
+        const inner = pathZ === null ? z + 120 : pathZ - 14;
+        return [x, Math.min(z + 260, Math.max(z + 40, inner))];
+    }).reverse();
+    group.add(groundPolygon([...beachShore, ...beachInner], sand));
 
-    // Golden Gate Promenade, just south of the row of lights
-    const promenade = new THREE.Mesh(
-        new THREE.PlaneGeometry(6400, 16),
-        new THREE.MeshStandardMaterial({
-            color: 0xbdb193,
-            roughness: 0.95,
-            polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnits: -1
-        })
-    );
-    promenade.rotation.x = -Math.PI / 2;
-    promenade.position.set(-200, 0, 12);
-    promenade.receiveShadow = true;
-    group.add(promenade);
+    // Golden Gate Promenade (the lights run straight east-west beside it)
+    group.add(ribbon(PROMENADE, 16, new THREE.MeshStandardMaterial({
+        color: 0xbdb193,
+        roughness: 0.95,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2
+    })));
 
-    // Golden Gate Bridge, ~1.3 miles WNW, deck bearing ~350°
+    // Golden Gate Bridge, positioned from its south tower and deck bearing
     const bridge = goldenGateBridge();
-    bridge.position.set(-4550, WATER_Y, -5460);
-    bridge.rotation.y = THREE.MathUtils.degToRad(10);
+    const deckTurn = THREE.MathUtils.degToRad(360 - GOLDEN_GATE.bearing); // west of north
+    const [towerX, towerZ] = GOLDEN_GATE.southTower;
+    bridge.position.set(towerX - Math.sin(deckTurn) * 2100, WATER_Y, towerZ - Math.cos(deckTurn) * 2100);
+    bridge.rotation.y = deckTurn;
     group.add(bridge);
 
-    // Marin Headlands, Sausalito, Tiburon, Angel Island, Alcatraz, Mt. Tamalpais
-    const marin = new THREE.MeshLambertMaterial({ color: 0x75794a, flatShading: true });
-    const island = new THREE.MeshLambertMaterial({ color: 0x5d6b45, flatShading: true });
-    const northHills = [
-        { x: -5200, z: -10000, radiusX: 1800, radiusZ: 1600, height: 450, material: marin, seed: 11 },
-        { x: -9000, z: -11800, radiusX: 4500, radiusZ: 3200, height: 920, material: marin, seed: 12 },
-        { x: -15000, z: -10500, radiusX: 5500, radiusZ: 3500, height: 800, material: marin, seed: 13 },
-        { x: -3000, z: -15800, radiusX: 4500, radiusZ: 4000, height: 1000, material: marin, seed: 14 },
-        { x: 2500, z: -21500, radiusX: 4500, radiusZ: 3000, height: 600, material: marin, seed: 15 },
-        { x: 8700, z: -20460, radiusX: 3500, radiusZ: 3000, height: 788, material: island, seed: 16 },
-        { x: -30000, z: -38000, radiusX: 14000, radiusZ: 8000, height: 2571, material: marin, seed: 17 }
+    // Bluffs where the approaches meet land: the toll plaza above Fort Point,
+    // and the Marin hillside the roadway cuts into
+    const bluffs = [
+        { x: -3950, z: -1100, radiusX: 700, radiusZ: 1000, height: 212, plateau: 0.4, material: grass },
+        { x: -5500, z: -10000, radiusX: 1500, radiusZ: 1400, height: 800, plateau: 0.1, material: marinGrass }
     ];
-    northHills.forEach(h => group.add(hill({ ...h, baseY: WATER_Y })));
+    bluffs.forEach(m => group.add(mound(m)));
 
-    group.add(hill({ x: 11460, z: -8000, radiusX: 900, radiusZ: 400, height: 110, material: island, seed: 18, baseY: WATER_Y }));
+    const presidio = new THREE.MeshLambertMaterial({ color: 0x4a6440, flatShading: true });
+    const marin = new THREE.MeshLambertMaterial({ color: 0x75794a, flatShading: true });
+
+    // Marin Headlands, Wolfback Ridge and Mt. Tamalpais
+    [
+        { x: -10000, z: -9800, radiusX: 3200, radiusZ: 2400, height: 920, seed: 12 },
+        { x: -16500, z: -9500, radiusX: 5000, radiusZ: 3500, height: 800, seed: 13 },
+        { x: -6000, z: -15000, radiusX: 2000, radiusZ: 3500, height: 900, seed: 14 },
+        { x: -30000, z: -38000, radiusX: 14000, radiusZ: 8000, height: 2571, seed: 17 }
+    ].forEach(h => group.add(hill({ ...h, material: marin })));
+
+    // Islands and the Tiburon peninsula
+    const island = new THREE.MeshLambertMaterial({ color: 0x5d6b45, flatShading: true });
+    [
+        { x: 2500, z: -21500, radiusX: 4500, radiusZ: 3000, height: 600, seed: 15 },
+        { x: 8700, z: -20460, radiusX: 3500, radiusZ: 3000, height: 788, seed: 16 },
+        { x: 11460, z: -8000, radiusX: 900, radiusZ: 400, height: 110, seed: 18 }
+    ].forEach(h => group.add(hill({ ...h, material: island, baseY: WATER_Y })));
+
     const alcatraz = buildings({
         count: 4,
         area: { minX: 11300, maxX: 11600, minZ: -8100, maxZ: -7900 },
@@ -423,20 +537,29 @@ function buildCrissyField(group) {
     alcatraz.position.y = WATER_Y + 90;
     group.add(alcatraz);
 
-    // Presidio hills and Pacific Heights to the south
-    const presidio = new THREE.MeshLambertMaterial({ color: 0x4a6440, flatShading: true });
+    // Presidio hills, Lincoln Park and Pacific Heights to the south
     const heights = new THREE.MeshLambertMaterial({ color: 0x8a8f80, flatShading: true });
     const southHills = [
-        { x: -4200, z: 4200, radiusX: 3500, radiusZ: 2600, height: 330, material: presidio, seed: 21 },
-        { x: -600, z: 5400, radiusX: 2800, radiusZ: 2200, height: 280, material: presidio, seed: 22 },
+        { x: -2800, z: 3800, radiusX: 2500, radiusZ: 2200, height: 330, material: presidio, seed: 21 },
+        { x: -200, z: 5200, radiusX: 2800, radiusZ: 2200, height: 280, material: presidio, seed: 22 },
+        { x: -10000, z: 8000, radiusX: 3000, radiusZ: 1800, height: 250, material: presidio, seed: 27 },
         { x: 6500, z: 6200, radiusX: 5000, radiusZ: 2600, height: 370, material: heights, seed: 23 }
     ];
     southHills.forEach(h => group.add(hill(h)));
 
+    const onSFLand = (x, z) => pointInPolygon(sfLand, x, z);
+    const groundHeight = (x, z) => Math.max(
+        0,
+        ...southHills.map(h => hillHeightAt(h, x, z)),
+        ...bluffs.map(m => moundHeightAt(m, x, z))
+    );
+
+    // Presidio forest, leaving the old airfield open
     group.add(trees({
         count: 900,
-        area: { minX: -7000, maxX: 1500, minZ: 900, maxZ: 6000 },
-        hills: southHills,
+        area: { minX: -5500, maxX: 1500, minZ: 600, maxZ: 6000 },
+        groundHeight,
+        accept: (x, z) => onSFLand(x, z) && !(x > -3000 && z < 800),
         seed: 24
     }));
 
@@ -448,6 +571,7 @@ function buildCrissyField(group) {
         height: r => 25 + r * 25,
         colors: [0xe8e0d0, 0xf0ece4, 0xd9cdb8, 0xe6d5c0, 0xcfd6d9],
         emissive: 0x1a140a,
+        accept: onSFLand,
         seed: 25
     }));
 
@@ -459,6 +583,7 @@ function buildCrissyField(group) {
         height: r => 80 + Math.pow(r, 3) * 900,
         colors: [0xb8bcc0, 0xd0d0cc, 0x9aa3ab, 0xc8c0b0],
         emissive: 0x1a1810,
+        accept: onSFLand,
         seed: 26
     }));
 
