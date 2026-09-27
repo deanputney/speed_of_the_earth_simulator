@@ -4,6 +4,17 @@
 
 A Three.js simulation of [The Speed of the Earth](https://www.davidrumsey.com/blog/2024/10/24/the-speed-of-the-earth-at-burning-man-sept-2024), an art installation first shown at Burning Man 2024. A row of strobe lights flashes in sequence from east to west at the speed the ground moves due to Earth's rotation (1,156 feet per second at Burning Man's latitude), so the wave of light stays fixed relative to the sun while the Earth turns beneath it.
 
+## The Fade (2026)
+
+The default animation matches the 2026 flash style, the "hybrid envelope" in flash head firmware 0.19h (see the hardware repo, `software/Image12g/Smoke Creek/pattern.py`). Each light:
+
+1. glows dimly for 250 ms as the wave approaches,
+2. flashes at its scheduled moment,
+3. goes dark for about 0.2 s,
+4. then fades out over 500 ms.
+
+About a second of light surrounds each flash, so several lights glow at once around the wave front. The plain strobe is still available as **Sequential**.
+
 ## Sites and Layout
 
 The **Site** tab sets where the installation is and how it's laid out:
@@ -56,7 +67,7 @@ You can configure the simulation via URL parameters to share specific views and 
 ### Animation Mode
 - `mode` or `animation` - Set the animation mode
   - Example: `?mode=brightness-burst`
-  - Available modes: `sequential`, `blink-all`, `fast-runs`, `ping-pong`, `ping-pong-fast`, `random`, `converge-center`, `diverge-center`, `converge-point`, `diverge-point`, `brightness-burst`, `brightness-burst-realtime`
+  - Available modes: `fade` (default), `sequential`, `blink-all`, `fast-runs`, `ping-pong`, `ping-pong-fast`, `random`, `converge-center`, `diverge-center`, `converge-point`, `diverge-point`, `brightness-burst`, `brightness-burst-realtime`
 
 ### Animation Settings
 - `point` - Set the convergence/divergence point (0 to number of lights − 1) for point-based modes
