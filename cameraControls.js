@@ -1,61 +1,78 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// Camera preset positions and targets
-// Scale: 1 THREE.js unit = 1 foot
-// Installation is ~5104 feet long, centered at origin (from -2552 to 2552)
-export const CameraPresets = {
-    WALKING: {
-        name: 'Walking Mode',
-        position: new THREE.Vector3(40, 6, -2590), // 50ft away at an angle from first light
-        target: new THREE.Vector3(0, 4, -2400), // Looking toward the lights at an angle
-        fov: 75,
-        isWalking: true
-    },
-    GROUND: {
-        name: 'Ground Start',
-        position: new THREE.Vector3(0, 6, -2602), // 50 feet before start, 6 feet high
-        target: new THREE.Vector3(0, 4, 2552), // Looking down the entire row to the end
-        fov: 75
-    },
-    GROUND_END: {
-        name: 'Ground End',
-        position: new THREE.Vector3(0, 8, 2600), // Beyond the far end, 8 feet high
-        target: new THREE.Vector3(0, 4, -2552), // Looking back toward the start
-        fov: 75
-    },
-    ELEVATED: {
-        name: 'Elevated View',
-        position: new THREE.Vector3(1200, 600, 1200), // 600 feet high, further back and angled
-        target: new THREE.Vector3(0, 0, -500), // Looking toward the middle/start
-        fov: 60
-    },
-    AERIAL: {
-        name: 'Aerial View',
-        position: new THREE.Vector3(0, 4000, 0), // 4000 feet high to see entire installation
-        target: new THREE.Vector3(0, 0, 0),
-        fov: 90
-    },
-    SIDE: {
-        name: 'Side View',
-        position: new THREE.Vector3(2000, 400, 0), // 2000 feet to the side, 400 feet high
-        target: new THREE.Vector3(0, 0, 0), // Looking at center of installation
-        fov: 70
-    },
-    FOLLOW: {
-        name: 'Following Wave',
-        position: new THREE.Vector3(0, 50, -2552), // Start at beginning, 50 feet high
-        target: new THREE.Vector3(0, 4, -2552),
-        fov: 70,
-        isFollowing: true
-    }
-};
+import { isTypingTarget } from './controls.js';
+
+export const CAMERA_VIEWS = [
+    { key: 'WALKING', name: 'Walking Mode' },
+    { key: 'GROUND', name: 'Ground Start' },
+    { key: 'GROUND_END', name: 'Ground End' },
+    { key: 'ELEVATED', name: 'Elevated View' },
+    { key: 'AERIAL', name: 'Aerial View' },
+    { key: 'SIDE', name: 'Side View' },
+    { key: 'FOLLOW', name: 'Following Wave' }
+];
+
+/**
+ * Camera preset positions and targets for an installation.
+ * Scale: 1 THREE.js unit = 1 foot. Views scale with the length of the row
+ * (proportions match the original mile-long Burning Man layout).
+ */
+function buildCameraPresets(installation) {
+    const half = installation.length / 2;
+    const size = Math.max(installation.length, 1500);
+    const at = (along, height, side = 0) => installation.pointAt(along, height, side);
+
+    return {
+        WALKING: {
+            position: at(-half - 38, 6, 40), // Just past the first light, off to one side
+            target: at(-half + Math.min(152, half), 4), // Looking toward the lights at an angle
+            fov: 75,
+            isWalking: true
+        },
+        GROUND: {
+            position: at(-half - 50, 6), // 50 feet before the first light, 6 feet high
+            target: at(half, 4), // Looking down the entire row to the end
+            fov: 75
+        },
+        GROUND_END: {
+            position: at(half + 48, 8), // Beyond the far end, 8 feet high
+            target: at(-half, 4), // Looking back toward the start
+            fov: 75
+        },
+        ELEVATED: {
+            // Behind the start of the row, looking down its length (west at both sites)
+            position: at(-0.235 * size, 0.1175 * size, 0.235 * size),
+            target: at(0.098 * size, 0),
+            fov: 60
+        },
+        AERIAL: {
+            position: at(0, 0.78 * size), // High enough to see the entire installation
+            target: at(0, 0),
+            fov: 90
+        },
+        SIDE: {
+            position: at(0, 0.078 * size, 0.39 * size),
+            target: at(0, 0),
+            fov: 70
+        },
+        FOLLOW: {
+            position: at(-half, 50),
+            target: at(-half, 4),
+            fov: 70,
+            isFollowing: true
+        }
+    };
+}
 
 export class CameraController {
-    constructor(camera, renderer) {
+    constructor(camera, renderer, installation) {
         this.camera = camera;
         this.renderer = renderer;
+        this.installation = installation;
+        this.presets = buildCameraPresets(installation);
         this.controls = null;
+        this.buttons = [];
         this.currentPreset = null;
         this.isTransitioning = false;
         this.transitionProgress = 0;
@@ -86,11 +103,23 @@ export class CameraController {
         this.groundLevel = 6;
 
         this.initControls();
-        this.createUI();
         this.setupWalkingControls();
 
         // Set default view to elevated
         this.setPreset('ELEVATED', false);
+    }
+
+    /**
+     * Recompute views after the layout changes and move to the updated current view
+     * (walkers stay where they are).
+     */
+    setInstallation(installation) {
+        this.installation = installation;
+        this.presets = buildCameraPresets(installation);
+        if (this.currentPreset && !this.isWalkingMode) {
+            this.isTransitioning = false;
+            this.setPreset(this.currentPreset);
+        }
     }
 
     initControls() {
@@ -99,55 +128,41 @@ export class CameraController {
         this.controls.dampingFactor = 0.05;
         this.controls.screenSpacePanning = false;
         this.controls.minDistance = 10;
-        this.controls.maxDistance = 8000; // Allow zooming out to see full installation
+        this.controls.maxDistance = 30000; // Allow zooming out to see the surrounding landscape
         this.controls.maxPolarAngle = Math.PI / 2;
         this.controls.zoomToCursor = true; // Zoom toward mouse cursor position
     }
 
-    createUI(container = null) {
-        // If no container provided, create standalone (legacy)
-        if (!container) {
-            const controlsDiv = document.createElement('div');
-            controlsDiv.id = 'camera-controls';
-            container = controlsDiv;
-            document.body.appendChild(controlsDiv);
-        }
-
+    createUI(container) {
         container.innerHTML = `
             <div class="controls-header">Camera Views</div>
             <div class="controls-buttons">
-                ${Object.entries(CameraPresets).map(([key, preset]) => `
-                    <button class="camera-btn" data-preset="${key}">${preset.name}</button>
+                ${CAMERA_VIEWS.map(view => `
+                    <button class="camera-btn" data-preset="${view.key}">${view.name}</button>
                 `).join('')}
             </div>
             <div class="controls-info">
                 <small>Use mouse to manually control camera<br>
-                Left: Rotate | Right: Pan | Scroll: Zoom</small>
+                Left: Rotate | Right: Pan | Scroll: Zoom<br>
+                Walking: WASD to move, Space to jump, click to look around</small>
             </div>
         `;
 
-        // Add event listeners
-        const buttons = container.querySelectorAll('.camera-btn');
-        buttons.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const preset = btn.dataset.preset;
-                this.setPreset(preset);
-
-                // Update active button
-                buttons.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-            });
+        this.buttons = [...container.querySelectorAll('.camera-btn')];
+        this.buttons.forEach(btn => {
+            btn.addEventListener('click', () => this.setPreset(btn.dataset.preset));
         });
+        this.updateActiveButton();
+    }
 
-        // Set initial active button
-        const elevatedBtn = container.querySelector('[data-preset="ELEVATED"]');
-        if (elevatedBtn) elevatedBtn.classList.add('active');
+    updateActiveButton() {
+        this.buttons.forEach(btn => btn.classList.toggle('active', btn.dataset.preset === this.currentPreset));
     }
 
     setupWalkingControls() {
         // Keyboard controls for WASD and jump
         document.addEventListener('keydown', (e) => {
-            if (!this.isWalkingMode) return;
+            if (!this.isWalkingMode || isTypingTarget(e)) return;
 
             switch (e.key.toLowerCase()) {
                 case 'w': this.moveState.forward = true; break;
@@ -155,11 +170,12 @@ export class CameraController {
                 case 'a': this.moveState.left = true; break;
                 case 'd': this.moveState.right = true; break;
                 case ' ':
-                    // Jump with spacebar
+                    // Jump with spacebar (and don't also toggle the animation)
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (!this.isJumping) {
                         this.isJumping = true;
                         this.verticalVelocity = this.jumpSpeed;
-                        e.preventDefault();
                     }
                     break;
             }
@@ -203,10 +219,11 @@ export class CameraController {
     }
 
     setPreset(presetKey, animate = true) {
-        const preset = CameraPresets[presetKey];
+        const preset = this.presets[presetKey];
         if (!preset) return;
 
         this.currentPreset = presetKey;
+        this.updateActiveButton();
         this.isFollowingWave = preset.isFollowing || false;
         this.isWalkingMode = preset.isWalking || false;
 
@@ -244,18 +261,13 @@ export class CameraController {
             this.controls.update();
 
             // If entering walking mode, set initial look direction
-            if (this.isWalkingMode) {
-                const lookDirection = new THREE.Vector3();
-                lookDirection.subVectors(preset.target, preset.position).normalize();
-
-                // Calculate euler angles from look direction
-                this.euler.y = Math.atan2(lookDirection.x, -lookDirection.z);
-                this.euler.x = Math.asin(lookDirection.y);
-                this.euler.z = 0;
-
-                this.camera.quaternion.setFromEuler(this.euler);
-            }
+            if (this.isWalkingMode) this.faceTarget(preset.target);
         }
+    }
+
+    faceTarget(target) {
+        this.camera.lookAt(target);
+        this.euler.setFromQuaternion(this.camera.quaternion);
     }
 
     update(deltaTime, wavePosition) {
@@ -288,32 +300,16 @@ export class CameraController {
                 this.isTransitioning = false;
 
                 // If entering walking mode, set initial look direction
-                if (this.isWalkingMode) {
-                    const lookDirection = new THREE.Vector3();
-                    lookDirection.subVectors(this.transitionToTarget, this.camera.position).normalize();
-
-                    // Calculate euler angles from look direction
-                    this.euler.y = Math.atan2(lookDirection.x, -lookDirection.z);
-                    this.euler.x = Math.asin(lookDirection.y);
-                    this.euler.z = 0;
-
-                    this.camera.quaternion.setFromEuler(this.euler);
-                }
+                if (this.isWalkingMode) this.faceTarget(this.transitionToTarget);
             }
         }
 
         // Handle following wave mode
         if (this.isFollowingWave && !this.isTransitioning) {
-            // Update camera to follow the wave
-            // Offset: 50 feet high, 100 feet behind the current light
-            const offset = new THREE.Vector3(0, 50, 100);
-            this.camera.position.set(
-                offset.x,
-                offset.y,
-                this.wavePosition + offset.z
-            );
+            // Update camera to follow the wave: 50 feet high, 100 feet ahead of the current light
+            this.installation.pointAt(this.wavePosition + 100, 50, 0, this.camera.position);
             // Look at the current wave position
-            this.controls.target.set(0, 4, this.wavePosition);
+            this.installation.pointAt(this.wavePosition, 4, 0, this.controls.target);
         }
 
         // Handle walking mode

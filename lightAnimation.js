@@ -1,42 +1,68 @@
 /**
  * Light Animation System for Speed of the Earth Simulator
  *
- * Animates 30 lights in sequence to represent Earth's rotational speed
- * at Burning Man latitude (1156 feet per second)
+ * Flashes the lights in sequence so the wave travels at the speed of the ground
+ * due to Earth's rotation at the installation's latitude.
  */
 
-export class LightAnimation {
-    constructor(lights, glowSpheres) {
-        this.lights = lights;
-        this.glowSpheres = glowSpheres;
+const MODES = [
+    { id: 'sequential', name: 'Sequential', description: 'Lights flash in order (default)' },
+    { id: 'blink-all', name: 'Blink All', description: 'Run once, then blink all 3 times' },
+    { id: 'fast-runs', name: 'Fast Runs', description: 'Run once, then 3 fast runs' },
+    { id: 'ping-pong', name: 'Ping Pong', description: 'Run forward then backward' },
+    { id: 'ping-pong-fast', name: 'Ping Pong Fast', description: 'Run forward then backward (fast)' },
+    { id: 'random', name: 'Random', description: 'Flash lights in random order' },
+    { id: 'converge-center', name: 'Converge Center', description: 'Both ends to middle' },
+    { id: 'converge-point', name: 'Converge Point', description: 'Both ends to specific point' },
+    { id: 'diverge-center', name: 'Diverge Center', description: 'Middle outward' },
+    { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' }
+];
 
-        // Physical constants
-        this.EARTH_ROTATION_SPEED = 1156; // feet per second at Burning Man latitude
-        this.LIGHT_SPACING = 176; // feet between lights
+const FAST_FACTOR = 5;      // Fast modes run 5x Earth speed
+const BLINK_PERIOD = 0.3;   // seconds per blink in blink-all
+const BLINK_COUNT = 3;
+
+export class LightAnimation {
+    /**
+     * @param {Installation} installation - renders flash levels
+     * @param {object} config - see configure()
+     */
+    constructor(installation, config) {
+        this.installation = installation;
         this.FLASH_DURATION = 0.05; // seconds (50ms strobe effect)
 
         // Animation state
         this.currentTime = 0;
         this.enabled = true;
-        this.speedMultiplier = 1.0; // For demonstration purposes
-        this.allLightsOn = false; // Mode where all lights stay on
+        this.speedMultiplier = 1.0;
+        this.allLightsOn = false;
 
-        // Animation mode
-        this.animationMode = 'sequential'; // Default mode
-        this.modeState = {}; // State specific to current animation mode
-        this.convergencePoint = Math.floor(this.lights.length / 2); // Default to middle
-        this.divergencePoint = Math.floor(this.lights.length / 2); // Default to middle
+        this.animationMode = 'sequential';
+        this.modeState = {};
+        this.convergencePoint = 0;
+        this.divergencePoint = 0;
 
-        // Calculate timing
-        // Time for wave to travel between adjacent lights
-        this.timeBetweenLights = this.LIGHT_SPACING / this.EARTH_ROTATION_SPEED;
+        this.configure(config);
+    }
+
+    /**
+     * Update timing for a new layout.
+     * @param {object} config - { numLights, spacing (ft), earthSpeed (ft/s) }
+     */
+    configure({ numLights, spacing, earthSpeed }) {
+        this.numLights = numLights;
+        this.spacing = spacing;
+        this.earthSpeed = earthSpeed;
+
+        // Time for the wave to travel between adjacent lights
+        this.timeBetweenLights = spacing / earthSpeed;
         // Total cycle time for full sequence
-        this.cycleDuration = this.timeBetweenLights * this.lights.length;
+        this.cycleDuration = this.timeBetweenLights * numLights;
 
-        // Light intensity settings
-        this.PEAK_INTENSITY = 1000; // Maximum light intensity (increased for fuller coverage)
-        this.PEAK_OPACITY = 0.8; // Maximum glow sphere opacity
-        this.PEAK_BULB_OPACITY = 1.0; // Maximum bulb opacity
+        const middle = Math.floor(numLights / 2);
+        this.convergencePoint = middle;
+        this.divergencePoint = middle;
+        this.modeState = {};
     }
 
     /**
@@ -44,144 +70,72 @@ export class LightAnimation {
      * @param {number} deltaTime - Time elapsed since last frame in seconds
      */
     update(deltaTime) {
-        // If allLightsOn mode is active, keep all lights at full brightness
         if (this.allLightsOn) {
-            this.setAllLightsIntensity(this.PEAK_INTENSITY);
+            this.installation.setAllLevels(1);
             return;
         }
 
         if (!this.enabled) return;
 
-        // Update animation time with speed multiplier
         this.currentTime += deltaTime * this.speedMultiplier;
 
-        // Delegate to mode-specific update method
         switch (this.animationMode) {
-            case 'sequential':
-                this.updateSequential();
-                break;
-            case 'blink-all':
-                this.updateBlinkAll();
-                break;
-            case 'fast-runs':
-                this.updateFastRuns();
-                break;
-            case 'ping-pong':
-                this.updatePingPong();
-                break;
-            case 'ping-pong-fast':
-                this.updatePingPongFast();
-                break;
-            case 'random':
-                this.updateRandom();
-                break;
-            case 'converge-center':
-                this.updateConvergeCenter();
-                break;
-            case 'converge-point':
-                this.updateConvergePoint();
-                break;
-            case 'diverge-center':
-                this.updateDivergeCenter();
-                break;
-            case 'diverge-point':
-                this.updateDivergePoint();
-                break;
-            default:
-                this.updateSequential();
+            case 'blink-all': this.updateBlinkAll(); break;
+            case 'fast-runs': this.updateFastRuns(); break;
+            case 'ping-pong': this.updatePingPong(1); break;
+            case 'ping-pong-fast': this.updatePingPong(FAST_FACTOR); break;
+            case 'random': this.updateRandom(); break;
+            case 'converge-center': this.updateConverge(Math.floor(this.numLights / 2)); break;
+            case 'converge-point': this.updateConverge(this.convergencePoint); break;
+            case 'diverge-center': this.updateDiverge(Math.floor(this.numLights / 2)); break;
+            case 'diverge-point': this.updateDiverge(this.divergencePoint); break;
+            default: this.updateSequential();
         }
     }
 
     /**
-     * Helper to set all lights to a specific intensity
+     * Flash brightness (0-1) for a light that fired `timeSinceFlash` seconds ago
      */
-    setAllLightsIntensity(intensity) {
-        const opacity = intensity > 0 ? this.PEAK_OPACITY : 0;
-        const bulbOpacity = intensity > 0 ? this.PEAK_BULB_OPACITY : 0;
-
-        for (let i = 0; i < this.lights.length; i++) {
-            this.lights[i].intensity = intensity;
-            this.glowSpheres[i].material.opacity = opacity;
-            if (this.lights[i].userData.bulb) {
-                this.lights[i].userData.bulb.material.opacity = bulbOpacity;
-            }
-        }
+    flashLevel(timeSinceFlash) {
+        if (timeSinceFlash < 0 || timeSinceFlash > this.FLASH_DURATION) return 0;
+        return Math.sin((timeSinceFlash / this.FLASH_DURATION) * Math.PI);
     }
 
     /**
-     * Helper to set a specific light's intensity
+     * Render one frame of a repeating wave.
+     * @param {number} cycleTime - time within the current period
+     * @param {number} period - seconds before the pattern repeats
+     * @param {function} flashTimeOf - light index -> time within the period it fires
      */
-    setLightIntensity(index, intensity, glowOpacity, bulbOpacity) {
-        if (index < 0 || index >= this.lights.length) return;
-
-        this.lights[index].intensity = intensity;
-        this.glowSpheres[index].material.opacity = glowOpacity;
-        if (this.lights[index].userData.bulb) {
-            this.lights[index].userData.bulb.material.opacity = bulbOpacity;
+    renderWave(cycleTime, period, flashTimeOf) {
+        for (let i = 0; i < this.numLights; i++) {
+            let timeSinceFlash = cycleTime - flashTimeOf(i);
+            if (timeSinceFlash < 0) timeSinceFlash += period;
+            this.installation.setLevel(i, this.flashLevel(timeSinceFlash));
         }
-    }
-
-    /**
-     * Calculate flash intensity based on time difference
-     */
-    calculateFlashIntensity(timeDiff) {
-        if (timeDiff > this.FLASH_DURATION) {
-            return { intensity: 0, glowOpacity: 0, bulbOpacity: 0 };
-        }
-
-        const flashProgress = timeDiff / this.FLASH_DURATION;
-        const curve = Math.sin(flashProgress * Math.PI);
-
-        return {
-            intensity: curve * this.PEAK_INTENSITY,
-            glowOpacity: curve * this.PEAK_OPACITY,
-            bulbOpacity: curve * this.PEAK_BULB_OPACITY
-        };
     }
 
     /**
      * Sequential mode: lights flash in order from start to end
      */
     updateSequential() {
-        const cycleTime = this.currentTime % this.cycleDuration;
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const lightFlashTime = i * this.timeBetweenLights;
-            let timeDiff = cycleTime - lightFlashTime;
-
-            if (timeDiff < 0) {
-                timeDiff += this.cycleDuration;
-            }
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
+        const T = this.timeBetweenLights;
+        this.renderWave(this.currentTime % this.cycleDuration, this.cycleDuration, i => i * T);
     }
 
     /**
      * Blink all: Flash all lights 3 times after each cycle
      */
     updateBlinkAll() {
-        const fullCycleDuration = this.cycleDuration + (3 * 0.3); // 3 blinks, 0.3s each
+        const T = this.timeBetweenLights;
+        const fullCycleDuration = this.cycleDuration + BLINK_COUNT * BLINK_PERIOD;
         const cycleTime = this.currentTime % fullCycleDuration;
 
         if (cycleTime < this.cycleDuration) {
-            // Normal sequential run
-            for (let i = 0; i < this.lights.length; i++) {
-                const lightFlashTime = i * this.timeBetweenLights;
-                let timeDiff = cycleTime - lightFlashTime;
-
-                if (timeDiff < 0) timeDiff += this.cycleDuration;
-
-                const flash = this.calculateFlashIntensity(timeDiff);
-                this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-            }
+            this.renderWave(cycleTime, this.cycleDuration, i => i * T);
         } else {
-            // Blink all lights
-            const blinkTime = cycleTime - this.cycleDuration;
-            const blinkCycle = blinkTime % 0.3;
-            const intensity = (blinkCycle < 0.15) ? this.PEAK_INTENSITY : 0;
-            this.setAllLightsIntensity(intensity);
+            const blinkTime = (cycleTime - this.cycleDuration) % BLINK_PERIOD;
+            this.installation.setAllLevels(blinkTime < BLINK_PERIOD / 2 ? 1 : 0);
         }
     }
 
@@ -189,252 +143,113 @@ export class LightAnimation {
      * Fast runs: 3 fast runs after each normal cycle
      */
     updateFastRuns() {
-        const fastCycleDuration = this.cycleDuration / 5; // 5x faster
-        const fullCycleDuration = this.cycleDuration + (3 * fastCycleDuration);
+        const T = this.timeBetweenLights;
+        const fastCycleDuration = this.cycleDuration / FAST_FACTOR;
+        const fullCycleDuration = this.cycleDuration + 3 * fastCycleDuration;
         const cycleTime = this.currentTime % fullCycleDuration;
 
-        let effectiveCycleTime;
         if (cycleTime < this.cycleDuration) {
-            effectiveCycleTime = cycleTime;
+            this.renderWave(cycleTime, this.cycleDuration, i => i * T);
         } else {
-            effectiveCycleTime = ((cycleTime - this.cycleDuration) % fastCycleDuration);
-        }
-
-        const duration = (cycleTime < this.cycleDuration) ? this.cycleDuration : fastCycleDuration;
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const lightFlashTime = i * (this.timeBetweenLights / (duration === this.cycleDuration ? 1 : 5));
-            let timeDiff = effectiveCycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += duration;
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
+            const fastTime = (cycleTime - this.cycleDuration) % fastCycleDuration;
+            this.renderWave(fastTime, fastCycleDuration, i => i * T / FAST_FACTOR);
         }
     }
 
     /**
-     * Ping pong: Run forward then backward at normal speed
+     * Ping pong: Run forward then backward
+     * @param {number} speedFactor - multiple of Earth speed
      */
-    updatePingPong() {
-        const fullCycleDuration = this.cycleDuration * 2;
-        const cycleTime = this.currentTime % fullCycleDuration;
-        const isReverse = cycleTime >= this.cycleDuration;
-        const effectiveCycleTime = isReverse ? (fullCycleDuration - cycleTime) : cycleTime;
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const lightFlashTime = i * this.timeBetweenLights;
-            let timeDiff = effectiveCycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += this.cycleDuration;
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
-    }
-
-    /**
-     * Ping pong fast: Run forward then backward at fast speed
-     */
-    updatePingPongFast() {
-        const fastCycleDuration = this.cycleDuration / 5;
-        const fullCycleDuration = fastCycleDuration * 2;
-        const cycleTime = this.currentTime % fullCycleDuration;
-        const isReverse = cycleTime >= fastCycleDuration;
-        const effectiveCycleTime = isReverse ? (fullCycleDuration - cycleTime) : cycleTime;
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const lightFlashTime = i * (this.timeBetweenLights / 5);
-            let timeDiff = effectiveCycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += fastCycleDuration;
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
+    updatePingPong(speedFactor) {
+        const T = this.timeBetweenLights / speedFactor;
+        const legDuration = this.cycleDuration / speedFactor;
+        const cycleTime = this.currentTime % (legDuration * 2);
+        const effectiveTime = cycleTime >= legDuration ? 2 * legDuration - cycleTime : cycleTime;
+        this.renderWave(effectiveTime, legDuration, i => i * T);
     }
 
     /**
      * Random: Flash lights in random order
      */
     updateRandom() {
-        // Initialize random sequence if not exists
-        if (!this.modeState.randomSequence) {
-            this.modeState.randomSequence = Array.from({length: this.lights.length}, (_, i) => i);
-            // Fisher-Yates shuffle
-            for (let i = this.modeState.randomSequence.length - 1; i > 0; i--) {
+        if (!this.modeState.flashOrder) {
+            // Fisher-Yates shuffle, then invert so flashOrder[light] = its turn
+            const sequence = Array.from({ length: this.numLights }, (_, i) => i);
+            for (let i = sequence.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [this.modeState.randomSequence[i], this.modeState.randomSequence[j]] =
-                [this.modeState.randomSequence[j], this.modeState.randomSequence[i]];
+                [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
             }
+            this.modeState.flashOrder = [];
+            sequence.forEach((light, turn) => { this.modeState.flashOrder[light] = turn; });
         }
 
-        const cycleTime = this.currentTime % this.cycleDuration;
-
-        for (let seqIndex = 0; seqIndex < this.modeState.randomSequence.length; seqIndex++) {
-            const lightIndex = this.modeState.randomSequence[seqIndex];
-            const lightFlashTime = seqIndex * this.timeBetweenLights;
-            let timeDiff = cycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += this.cycleDuration;
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(lightIndex, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
+        const T = this.timeBetweenLights;
+        const order = this.modeState.flashOrder;
+        this.renderWave(this.currentTime % this.cycleDuration, this.cycleDuration, i => order[i] * T);
     }
 
     /**
-     * Converge center: Start from both ends, converge on middle
+     * Converge: both ends start together and travel toward `point`
      */
-    updateConvergeCenter() {
-        const cycleTime = this.currentTime % (this.cycleDuration / 2);
-        const mid = Math.floor(this.lights.length / 2);
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const distanceFromEnd = i <= mid ? i : this.lights.length - 1 - i;
-            const lightFlashTime = distanceFromEnd * this.timeBetweenLights;
-            let timeDiff = cycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += (this.cycleDuration / 2);
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
+    updateConverge(point) {
+        const T = this.timeBetweenLights;
+        const last = this.numLights - 1;
+        const period = (Math.max(point, last - point) + 1) * T;
+        this.renderWave(this.currentTime % period, period, i => (i <= point ? i : last - i) * T);
     }
 
     /**
-     * Converge point: Start from both ends, converge on specific point
+     * Diverge: start at `point` and travel outward in both directions
      */
-    updateConvergePoint() {
-        const cycleTime = this.currentTime % (this.cycleDuration / 2);
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const distanceFromEnd = i <= this.convergencePoint ?
-                i : this.lights.length - 1 - i;
-            const lightFlashTime = distanceFromEnd * this.timeBetweenLights;
-            let timeDiff = cycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += (this.cycleDuration / 2);
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
+    updateDiverge(point) {
+        const T = this.timeBetweenLights;
+        const last = this.numLights - 1;
+        const period = (Math.max(point, last - point) + 1) * T;
+        this.renderWave(this.currentTime % period, period, i => Math.abs(i - point) * T);
     }
 
     /**
-     * Diverge center: Start from middle, move outward
-     */
-    updateDivergeCenter() {
-        const cycleTime = this.currentTime % (this.cycleDuration / 2);
-        const mid = Math.floor(this.lights.length / 2);
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const distanceFromCenter = Math.abs(i - mid);
-            const lightFlashTime = distanceFromCenter * this.timeBetweenLights;
-            let timeDiff = cycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += (this.cycleDuration / 2);
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
-    }
-
-    /**
-     * Diverge point: Start from specific point, move outward
-     */
-    updateDivergePoint() {
-        const cycleTime = this.currentTime % (this.cycleDuration / 2);
-
-        for (let i = 0; i < this.lights.length; i++) {
-            const distanceFromPoint = Math.abs(i - this.divergencePoint);
-            const lightFlashTime = distanceFromPoint * this.timeBetweenLights;
-            let timeDiff = cycleTime - lightFlashTime;
-
-            if (timeDiff < 0) timeDiff += (this.cycleDuration / 2);
-
-            const flash = this.calculateFlashIntensity(timeDiff);
-            this.setLightIntensity(i, flash.intensity, flash.glowOpacity, flash.bulbOpacity);
-        }
-    }
-
-    /**
-     * Set the animation speed multiplier
-     * @param {number} multiplier - Speed multiplier (1.0 = real-time, 0.5 = half speed, 2.0 = double speed)
+     * @param {number} multiplier - 1.0 = real-time, 0.5 = half speed, 2.0 = double speed
      */
     setSpeedMultiplier(multiplier) {
         this.speedMultiplier = Math.max(0.1, Math.min(10.0, multiplier));
     }
 
-    /**
-     * Enable or disable the animation
-     * @param {boolean} enabled
-     */
     setEnabled(enabled) {
         this.enabled = enabled;
-
-        // If disabling, turn off all lights
-        if (!enabled) {
-            for (let i = 0; i < this.lights.length; i++) {
-                this.lights[i].intensity = 0;
-                this.glowSpheres[i].material.opacity = 0;
-                if (this.lights[i].userData.bulb) {
-                    this.lights[i].userData.bulb.material.opacity = 0;
-                }
-            }
-        }
+        if (!enabled) this.installation.setAllLevels(0);
     }
 
-    /**
-     * Reset the animation to the beginning
-     */
     reset() {
         this.currentTime = 0;
     }
 
     /**
-     * Toggle all lights on/off mode
      * @param {boolean} on - If true, all lights stay on at full brightness
      */
     setAllLightsOn(on) {
         this.allLightsOn = on;
-
-        if (!on) {
-            // When disabling, turn off all lights
-            this.setAllLightsIntensity(0);
-        }
+        if (!on) this.installation.setAllLevels(0);
     }
 
-    /**
-     * Set the animation mode
-     * @param {string} mode - Animation mode name
-     */
     setAnimationMode(mode) {
         this.animationMode = mode;
-        this.currentTime = 0; // Reset time when changing modes
-        this.modeState = {}; // Clear mode-specific state
+        this.currentTime = 0;
+        this.modeState = {};
     }
 
-    /**
-     * Set convergence point for converge-point mode
-     * @param {number} point - Light index (0-29)
-     */
+    clampIndex(point) {
+        return Math.max(0, Math.min(this.numLights - 1, point));
+    }
+
     setConvergencePoint(point) {
-        this.convergencePoint = Math.max(0, Math.min(this.lights.length - 1, point));
+        this.convergencePoint = this.clampIndex(point);
     }
 
-    /**
-     * Set divergence point for diverge-point mode
-     * @param {number} point - Light index (0-29)
-     */
     setDivergencePoint(point) {
-        this.divergencePoint = Math.max(0, Math.min(this.lights.length - 1, point));
+        this.divergencePoint = this.clampIndex(point);
     }
 
-    /**
-     * Get current animation status
-     * @returns {object} Status information
-     */
     getStatus() {
         return {
             enabled: this.enabled,
@@ -444,7 +259,9 @@ export class LightAnimation {
             currentTime: this.currentTime,
             cycleDuration: this.cycleDuration,
             cycleProgress: (this.currentTime % this.cycleDuration) / this.cycleDuration,
-            earthRotationSpeed: this.EARTH_ROTATION_SPEED,
+            earthRotationSpeed: this.earthSpeed,
+            numLights: this.numLights,
+            spacing: this.spacing,
             timeBetweenLights: this.timeBetweenLights,
             flashDuration: this.FLASH_DURATION,
             convergencePoint: this.convergencePoint,
@@ -452,42 +269,17 @@ export class LightAnimation {
         };
     }
 
-    /**
-     * Get list of available animation modes
-     * @returns {Array} List of mode objects with name and description
-     */
     getAvailableModes() {
-        return [
-            { id: 'sequential', name: 'Sequential', description: 'Lights flash in order (default)' },
-            { id: 'blink-all', name: 'Blink All', description: 'Run once, then blink all 3 times' },
-            { id: 'fast-runs', name: 'Fast Runs', description: 'Run once, then 3 fast runs' },
-            { id: 'ping-pong', name: 'Ping Pong', description: 'Run forward then backward' },
-            { id: 'ping-pong-fast', name: 'Ping Pong Fast', description: 'Run forward then backward (fast)' },
-            { id: 'random', name: 'Random', description: 'Flash lights in random order' },
-            { id: 'converge-center', name: 'Converge Center', description: 'Both ends to middle' },
-            { id: 'converge-point', name: 'Converge Point', description: 'Both ends to specific point' },
-            { id: 'diverge-center', name: 'Diverge Center', description: 'Middle outward' },
-            { id: 'diverge-point', name: 'Diverge Point', description: 'Specific point outward' }
-        ];
+        return MODES;
     }
 
     /**
-     * Get the current Z position of the wave front
-     * @returns {number} Z position in THREE.js units (feet)
+     * Distance of the sequential wave front along the row, from its center (feet)
      */
     getCurrentWavePosition() {
         if (!this.enabled) return 0;
-
         const cycleTime = this.currentTime % this.cycleDuration;
-
-        // Calculate which light index the wave is at (can be fractional)
-        const currentLightIndex = cycleTime / this.timeBetweenLights;
-
-        // Convert to position along the installation
-        // Installation starts at -TOTAL_LENGTH/2
-        const TOTAL_LENGTH = (this.lights.length - 1) * this.LIGHT_SPACING;
-        const wavePosition = -TOTAL_LENGTH / 2 + (currentLightIndex * this.LIGHT_SPACING);
-
-        return wavePosition;
+        const lightIndex = cycleTime / this.timeBetweenLights;
+        return -((this.numLights - 1) * this.spacing) / 2 + lightIndex * this.spacing;
     }
 }

@@ -6,7 +6,7 @@
 export class UnifiedControls {
     constructor() {
         this.isCollapsed = false;
-        this.activeTab = 'camera';
+        this.activeTab = 'site';
         this.createUI();
         this.setupEventListeners();
     }
@@ -25,13 +25,17 @@ export class UnifiedControls {
             </div>
             <div class="controls-body">
                 <div class="controls-tabs">
-                    <button class="tab-btn active" data-tab="camera">Camera</button>
+                    <button class="tab-btn active" data-tab="site">Site</button>
+                    <button class="tab-btn" data-tab="camera">Camera</button>
                     <button class="tab-btn" data-tab="animation">Animation</button>
                     <button class="tab-btn" data-tab="lighting">Lighting</button>
                     <button class="tab-btn" data-tab="display">Display</button>
                 </div>
                 <div class="controls-content">
-                    <div id="tab-camera" class="tab-content active">
+                    <div id="tab-site" class="tab-content active">
+                        <!-- Location and layout controls will be inserted here -->
+                    </div>
+                    <div id="tab-camera" class="tab-content">
                         <!-- Camera controls will be inserted here -->
                     </div>
                     <div id="tab-animation" class="tab-content">
