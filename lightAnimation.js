@@ -6,7 +6,8 @@
  */
 
 const MODES = [
-    { id: 'sequential', name: 'Sequential', description: 'Lights flash in order (default)' },
+    { id: 'fade', name: 'Fade', description: 'Glow, flash, then fade out, in order (the 2026 flash style, default)' },
+    { id: 'sequential', name: 'Sequential', description: 'Lights flash in order' },
     { id: 'blink-all', name: 'Blink All', description: 'Run once, then blink all 3 times' },
     { id: 'fast-runs', name: 'Fast Runs', description: 'Run once, then 3 fast runs' },
     { id: 'ping-pong', name: 'Ping Pong', description: 'Run forward then backward' },
@@ -25,6 +26,24 @@ const BURST_MODES = ['brightness-burst', 'brightness-burst-realtime'];
 const FAST_FACTOR = 5;      // Fast modes run 5x Earth speed
 const BLINK_PERIOD = 0.3;   // seconds per blink in blink-all
 const BLINK_COUNT = 3;
+
+/**
+ * The 2026 fade: the "hybrid envelope" from flash head firmware 0.19h
+ * (speed_of_the_earth_hardware, software/Image12g/Smoke Creek/pattern.py).
+ * Times are seconds relative to a light's scheduled flash. The head makes the
+ * glows with a 111 Hz train of short pulses, which reads as a steady glow.
+ * Levels are perceived brightness, in Dean's by-eye order:
+ * burst > pre-glow > tail.
+ */
+const FADE = {
+    PREGLOW_START: -0.25,   // LOCKED_FADE_IN_MS: a flat pre-glow leads the burst
+    PREGLOW_LEVEL: 0.2,
+    TAIL_START: 0.215,      // ~212 ms dark after the burst while the head's current is stepped down
+    TAIL_LENGTH: 0.5,       // LOCKED_FADE_OUT_MS
+    TAIL_LEVEL: 0.15,
+    TAIL_END_RATIO: 0.5     // pulse on-time decays exponentially, 900 -> 450 us
+};
+const FADE_END = FADE.TAIL_START + FADE.TAIL_LENGTH;
 
 // Brightness is in UI units; 200,000 is the standard flash
 export const DEFAULT_BRIGHTNESS = 200000;
@@ -55,7 +74,7 @@ export class LightAnimation {
         this.speedMultiplier = 1.0;
         this.allLightsOn = false;
 
-        this.animationMode = 'sequential';
+        this.animationMode = 'fade';
         this.modeState = {};
         this.convergencePoint = 0;
         this.divergencePoint = 0;
@@ -107,6 +126,7 @@ export class LightAnimation {
             case 'converge-point': this.updateConverge(this.convergencePoint); break;
             case 'diverge-center': this.updateDiverge(Math.floor(this.numLights / 2)); break;
             case 'diverge-point': this.updateDiverge(this.divergencePoint); break;
+            case 'fade': this.updateFade(); break;
             case 'brightness-burst': this.updateBrightnessBurst(); break;
             case 'brightness-burst-realtime': this.updateBrightnessBurstRealtime(); break;
             default: this.updateSequential();
@@ -141,6 +161,42 @@ export class LightAnimation {
     updateSequential() {
         const T = this.timeBetweenLights;
         this.renderWave(this.currentTime % this.cycleDuration, this.cycleDuration, i => i * T);
+    }
+
+    /**
+     * Brightness (0-1) of a fading light `t` seconds after its scheduled flash
+     */
+    fadeLevel(t) {
+        if (t >= FADE.PREGLOW_START && t < 0) return FADE.PREGLOW_LEVEL;
+        if (t >= 0 && t <= this.FLASH_DURATION) {
+            // The burst rises out of the pre-glow rather than dipping to dark first
+            const burst = this.flashLevel(t);
+            return t < this.FLASH_DURATION / 2 ? Math.max(FADE.PREGLOW_LEVEL, burst) : burst;
+        }
+        if (t >= FADE.TAIL_START && t < FADE_END) {
+            return FADE.TAIL_LEVEL * FADE.TAIL_END_RATIO ** ((t - FADE.TAIL_START) / FADE.TAIL_LENGTH);
+        }
+        return 0;
+    }
+
+    /**
+     * Fade mode: each light glows as the wave approaches, flashes on its moment,
+     * then fades out behind it
+     */
+    updateFade() {
+        const T = this.timeBetweenLights;
+        const period = this.cycleDuration;
+        const cycleTime = this.currentTime % period;
+
+        for (let i = 0; i < this.numLights; i++) {
+            // The envelope (~1 s) can be longer than a short row's cycle, so take
+            // every repeat of it that overlaps now
+            const sinceFlash = cycleTime - i * T;
+            let t = sinceFlash - Math.floor((sinceFlash - FADE.PREGLOW_START) / period) * period;
+            let level = 0;
+            for (; t < FADE_END; t += period) level = Math.max(level, this.fadeLevel(t));
+            this.installation.setLevel(i, level);
+        }
     }
 
     /**
