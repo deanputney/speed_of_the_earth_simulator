@@ -3,15 +3,18 @@
  * Allows interactive control of the installation light brightness and distance
  */
 
+// Light distance that gives the standard 100 ft pool of light
+const STANDARD_DISTANCE = 200;
+
 export class LightControls {
-    constructor(lights, lightAnimation, container) {
-        this.lights = lights;
+    constructor(installation, lightAnimation, container) {
+        this.installation = installation;
         this.lightAnimation = lightAnimation;
         this.container = container;
 
         // Default values
-        this.brightness = 200000;
-        this.distance = 200; // feet - how far light reaches
+        this.brightness = lightAnimation.brightness;
+        this.distance = STANDARD_DISTANCE; // feet - how far light reaches
 
         this.createUI();
         this.updateLightProperties();
@@ -125,20 +128,9 @@ export class LightControls {
     }
 
     updateLightProperties() {
-        // Update the peak intensity in the animation system
-        // Convert UI brightness (0-300000) to internal intensity
-        // Mapping: 200000 (UI) = 1000 (internal), so multiply by 0.005
-        const internalIntensity = this.brightness * 0.005;
-        this.lightAnimation.PEAK_INTENSITY = internalIntensity;
-
-        // Update distance for all lights (both point and spot)
-        this.lights.forEach(light => {
-            light.distance = this.distance;
-            // Also update spotlight if it exists
-            if (light.userData.spotLight) {
-                light.userData.spotLight.distance = this.distance;
-            }
-        });
+        this.lightAnimation.setBrightness(this.brightness);
+        // Distance sets how far the pool of light spreads
+        this.installation.setSpread(this.distance / STANDARD_DISTANCE);
     }
 
     /**
@@ -146,9 +138,7 @@ export class LightControls {
      * Called by animation when brightness changes programmatically
      */
     updateUIFromAnimation() {
-        // Convert internal intensity back to UI brightness
-        // Mapping: internal * 200 = UI (1000 * 200 = 200000)
-        const uiBrightness = Math.round(this.lightAnimation.PEAK_INTENSITY * 200);
+        const uiBrightness = Math.round(this.lightAnimation.brightness);
 
         // Only update if brightness has changed
         if (uiBrightness !== this.brightness) {

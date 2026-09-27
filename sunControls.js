@@ -42,7 +42,7 @@ export class SunControls {
 
         container.innerHTML = `
             <div style="font-size: 11px; font-weight: 600; margin-bottom: 12px; letter-spacing: 1px;">
-                SUN POSITION
+                SUN / MOON POSITION
             </div>
 
             <div style="margin-bottom: 12px;">
@@ -66,7 +66,7 @@ export class SunControls {
                     <label style="font-size: 12px;">Elevation</label>
                     <span id="elevation-value" style="font-size: 12px; color: #4CAF50;">45°</span>
                 </div>
-                <input type="range" id="elevation-slider" min="5" max="90" value="45" step="1"
+                <input type="range" id="elevation-slider" min="0" max="90" value="45" step="1"
                     style="width: 100%; cursor: pointer;">
                 <div style="display: flex; justify-content: space-between; font-size: 10px; color: #888; margin-top: 2px;">
                     <span>Horizon</span>
@@ -85,7 +85,7 @@ export class SunControls {
             </div>
 
             <div style="font-size: 10px; color: #888; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
-                Drag sliders to adjust sun position and lighting
+                Set by the time of day. Drag to override.
             </div>
         `;
 
@@ -119,7 +119,7 @@ export class SunControls {
 
     updateLightPosition() {
         // Convert spherical coordinates to Cartesian
-        // Azimuth: 0° = North (+Z), 90° = East (+X), 180° = South (-Z), 270° = West (-X)
+        // Azimuth: 0° = North (-Z), 90° = East (+X), 180° = South (+Z), 270° = West (-X)
         // Elevation: 0° = horizon, 90° = directly overhead
 
         const azimuthRad = (this.azimuth - 90) * Math.PI / 180; // Adjust so 0° is North

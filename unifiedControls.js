@@ -26,6 +26,7 @@ export class UnifiedControls {
             <div class="controls-body">
                 <div class="controls-tabs">
                     <button class="tab-btn active" data-tab="animation">Animation</button>
+                    <button class="tab-btn" data-tab="site">Site</button>
                     <button class="tab-btn" data-tab="camera">Camera</button>
                     <button class="tab-btn" data-tab="lighting">Lighting</button>
                     <button class="tab-btn" data-tab="display">Display</button>
@@ -33,6 +34,9 @@ export class UnifiedControls {
                 <div class="controls-content">
                     <div id="tab-animation" class="tab-content active">
                         <!-- Animation mode controls will be inserted here -->
+                    </div>
+                    <div id="tab-site" class="tab-content">
+                        <!-- Location and layout controls will be inserted here -->
                     </div>
                     <div id="tab-camera" class="tab-content">
                         <!-- Camera controls will be inserted here -->

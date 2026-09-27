@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { CameraController } from './cameraControls.js';
+import { Installation } from './installation.js';
+import { Environment } from './environment.js';
 import { LightAnimation } from './lightAnimation.js';
 import { AnimationControls } from './controls.js';
 import { AnimationModeControls } from './animationModeControls.js';
@@ -7,15 +9,15 @@ import { DisplayControls } from './displayControls.js';
 import { TimeOfDayController } from './timeOfDay.js';
 import { SunControls } from './sunControls.js';
 import { UnifiedControls } from './unifiedControls.js';
+import { SiteControls } from './siteControls.js';
 import { LightControls } from './lightControls.js';
 import { MinimapControls } from './minimapControls.js';
+import { SITES, siteEarthSpeed, readLayoutFromURL, writeLayoutToURL } from './sites.js';
 
 // Scene setup
+// Scale: 1 THREE.js unit = 1 foot. North = -Z, East = +X.
 const scene = new THREE.Scene();
-// Background will be set by TimeOfDayController
-
-// Add very subtle atmospheric fog (optional - can be disabled)
-scene.fog = new THREE.FogExp2(0x1a1a2e, 0.00015); // Very subtle fog
+scene.fog = new THREE.Fog(0x000000, 500, 25000); // Color set by TimeOfDayController
 
 // Add ambient light - much dimmer to allow sun to dominate
 const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
@@ -23,36 +25,20 @@ scene.add(ambientLight);
 
 // Add directional light (sun) - stronger and with shadows
 const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
-directionalLight.position.set(1000, 1000, 500);
 directionalLight.castShadow = true;
-
-// Configure shadow properties for large scene
 directionalLight.shadow.mapSize.width = 2048;
 directionalLight.shadow.mapSize.height = 2048;
-directionalLight.shadow.camera.left = -3000;
-directionalLight.shadow.camera.right = 3000;
-directionalLight.shadow.camera.top = 3000;
-directionalLight.shadow.camera.bottom = -3000;
-directionalLight.shadow.camera.near = 0.5;
-directionalLight.shadow.camera.far = 5000;
 directionalLight.shadow.bias = -0.001;
-
 scene.add(directionalLight);
-
-// Optional: Add helper to visualize sun direction (can be removed)
-// const helper = new THREE.DirectionalLightHelper(directionalLight, 100);
-// scene.add(helper);
+scene.add(directionalLight.target);
 
 // Camera setup
 const camera = new THREE.PerspectiveCamera(
     75,
     window.innerWidth / window.innerHeight,
-    0.1,
-    10000 // Increase far plane to see large distances
+    1,
+    100000 // Far enough to see the surrounding landscape
 );
-// Position camera to view the scene from above and at an angle
-camera.position.set(0, 200, 500);
-camera.lookAt(0, 0, 0);
 
 // Renderer setup
 const renderer = new THREE.WebGLRenderer({
@@ -64,209 +50,61 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 // Enable shadows for realistic sun lighting
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-// Add renderer to DOM
 const container = document.getElementById('canvas-container');
 container.appendChild(renderer.domElement);
 
-// Create desert ground texture
-function createDesertTexture() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
+// Site scenery and the row of lights
+let layout = readLayoutFromURL();
+const environment = new Environment(scene);
+const installation = new Installation(scene);
 
-    // Base desert color
-    const baseColor = '#d4b896';
-    ctx.fillStyle = baseColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+function buildInstallation() {
+    const site = SITES[layout.siteId];
+    installation.build(
+        { ...layout, travelBearing: site.travelBearing },
+        (x, z) => environment.groundHeightAt(x, z)
+    );
 
-    // Add noise pattern for texture
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-
-    for (let i = 0; i < data.length; i += 4) {
-        const noise = (Math.random() - 0.5) * 30;
-        data[i] += noise;     // R
-        data[i + 1] += noise; // G
-        data[i + 2] += noise; // B
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-
-    // Add subtle darker patches for variation
-    ctx.fillStyle = 'rgba(180, 150, 120, 0.1)';
-    for (let i = 0; i < 20; i++) {
-        const x = Math.random() * canvas.width;
-        const y = Math.random() * canvas.height;
-        const radius = Math.random() * 50 + 20;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(20, 20); // Repeat to cover large area
-
-    return texture;
+    // Fit the sun's shadow camera to the row
+    const reach = installation.length / 2 + 500;
+    const shadowCamera = directionalLight.shadow.camera;
+    shadowCamera.left = shadowCamera.bottom = -reach;
+    shadowCamera.right = shadowCamera.top = reach;
+    shadowCamera.near = 0.5;
+    shadowCamera.far = reach * 4;
+    shadowCamera.updateProjectionMatrix();
 }
 
-// Create ground plane
-// Size: 6000 x 6000 feet (larger than the mile-long installation)
-// Scale: 1 THREE.js unit = 1 foot
-const groundGeometry = new THREE.PlaneGeometry(6000, 6000);
-const groundTexture = createDesertTexture();
-const groundMaterial = new THREE.MeshStandardMaterial({
-    map: groundTexture,
-    roughness: 0.9,  // Desert sand is quite rough
-    metalness: 0.0,  // No metallic properties
-    side: THREE.DoubleSide
+environment.build(SITES[layout.siteId].environment);
+buildInstallation();
+
+// Light animation system
+const lightAnimation = new LightAnimation(installation, {
+    numLights: layout.numLights,
+    spacing: layout.spacing,
+    earthSpeed: siteEarthSpeed(SITES[layout.siteId])
 });
-const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 
-// Rotate to be horizontal (plane starts vertical by default)
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = 0;
-ground.receiveShadow = true; // Ground receives shadows from lights
-
-scene.add(ground);
-
-// Create 30-light installation
-const NUM_LIGHTS = 30;
-const LIGHT_SPACING = 176; // feet
-const LIGHT_HEIGHT = 4; // feet (adjustable 4-10)
-const TOTAL_LENGTH = (NUM_LIGHTS - 1) * LIGHT_SPACING; // ~5104 feet
-
-// Arrays to store lights and markers
-const lights = [];
-const lightMarkers = [];
-const glowSpheres = [];
-
-// Create each light with marker
-for (let i = 0; i < NUM_LIGHTS; i++) {
-    // Calculate position along the line (centered at origin)
-    const z = -TOTAL_LENGTH / 2 + (i * LIGHT_SPACING);
-
-    // Create visual marker (thin pole)
-    const markerGeometry = new THREE.CylinderGeometry(0.3, 0.3, LIGHT_HEIGHT, 8);
-    const markerMaterial = new THREE.MeshStandardMaterial({
-        color: 0x666666,
-        roughness: 0.7,
-        metalness: 0.3,
-        emissive: 0x222222,
-        emissiveIntensity: 0.2
-    });
-    const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-    marker.position.set(0, LIGHT_HEIGHT / 2, z);
-    marker.castShadow = true;  // Markers cast shadows
-    marker.receiveShadow = true; // Markers can receive shadows from other objects
-    scene.add(marker);
-    lightMarkers.push(marker);
-
-    // Hybrid lighting system for realistic soft diffuse light:
-    // 1. PointLight for omnidirectional spread (main light)
-    const pointLight = new THREE.PointLight(
-        0xffffff,  // color
-        0,         // intensity (initially off, controlled by animation)
-        250,       // distance - how far the light reaches
-        1.5        // decay - gentler falloff for wider spread
-    );
-    pointLight.position.set(0, LIGHT_HEIGHT + 2, z); // Slightly higher for better spread
-    scene.add(pointLight);
-
-    // 2. SpotLight pointing down for ground focus (subtle accent)
-    const spotLight = new THREE.SpotLight(
-        0xffffff,  // color
-        0,         // intensity (initially off, will be 30% of point light)
-        300,       // distance (increased)
-        1.2,       // angle (wider cone ~68° for softer coverage)
-        0.9,       // penumbra (very soft edges)
-        1.0        // decay (light spreads further)
-    );
-    spotLight.position.set(0, LIGHT_HEIGHT, z);
-    spotLight.target.position.set(0, 0, z); // Point straight down
-    scene.add(spotLight);
-    scene.add(spotLight.target);
-
-    // Store both lights - point light is primary, spot is accent
-    const light = pointLight; // Primary light for animation control
-    light.userData.spotLight = spotLight; // Store accent light
-    lights.push(light);
-
-    // Create small glow sphere for subtle corona effect (much smaller)
-    const glowGeometry = new THREE.SphereGeometry(8, 16, 16); // 8 foot radius
-    const glowMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0,
-        side: THREE.BackSide
-    });
-    const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
-    glowSphere.position.set(0, LIGHT_HEIGHT, z);
-    scene.add(glowSphere);
-    glowSpheres.push(glowSphere);
-
-    // Add small light bulb sphere at fixture position
-    const lightBulbGeometry = new THREE.SphereGeometry(0.8, 16, 16);
-    const lightBulbMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffddaa,
-        emissive: 0xffaa44,
-        emissiveIntensity: 0.3,
-        roughness: 0.3,
-        metalness: 0.1
-    });
-    const lightBulb = new THREE.Mesh(lightBulbGeometry, lightBulbMaterial);
-    lightBulb.position.set(0, LIGHT_HEIGHT, z);
-    scene.add(lightBulb);
-    lights[i].userData.bulb = lightBulb;
-
-    // Create scale indicator circle (50-foot radius) on the ground
-    const circleGeometry = new THREE.RingGeometry(49.5, 50.5, 64); // Thin ring
-    const circleMaterial = new THREE.MeshBasicMaterial({
-        color: 0x00ff00,  // Green for visibility
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.6
-    });
-    const scaleCircle = new THREE.Mesh(circleGeometry, circleMaterial);
-    scaleCircle.rotation.x = -Math.PI / 2; // Lay flat on ground
-    scaleCircle.position.set(0, 0.1, z); // Slightly above ground to prevent z-fighting
-    scaleCircle.visible = false; // Hidden by default
-    scene.add(scaleCircle);
-
-    // Store reference for toggling
-    if (!lights[i].userData.scaleCircle) {
-        lights[i].userData.scaleCircle = scaleCircle;
-    }
-}
-
-// Initialize light animation system
-const lightAnimation = new LightAnimation(lights, glowSpheres);
-
-// Initialize animation controls for demonstration
+// Keyboard shortcuts and help overlay
 const animationControls = new AnimationControls(lightAnimation);
 
 // Create unified controls panel
 const unifiedControls = new UnifiedControls();
 
-// Initialize camera controller with its tab container
-const cameraController = new CameraController(camera, renderer);
+const cameraController = new CameraController(camera, renderer, installation);
 cameraController.createUI(unifiedControls.getTabContainer('camera'));
 
-// Initialize minimap
-const minimapControls = new MinimapControls(camera, scene, cameraController, lights);
+// Walking mode minimap
+const minimapControls = new MinimapControls(camera, scene, cameraController, installation);
 cameraController.minimapControls = minimapControls;
-// Show/hide based on current mode
 if (cameraController.isWalkingMode) {
     minimapControls.show();
 } else {
     minimapControls.hide();
 }
 
-// Initialize animation mode controls in its tab
 const animationModeControls = new AnimationModeControls(
     lightAnimation,
     unifiedControls.getTabContainer('animation')
@@ -275,85 +113,89 @@ const animationModeControls = new AnimationModeControls(
 // Link animation mode controls back to animation for UI updates
 lightAnimation.animationModeControls = animationModeControls;
 
-// Initialize display controls in display tab
 const displayControls = new DisplayControls(
-    lights,
+    installation,
+    scene.fog,
     unifiedControls.getTabContainer('display')
 );
 
-// Initialize time of day controller with skybox and lighting presets
-const timeOfDayController = new TimeOfDayController(scene, ambientLight, directionalLight);
+// Lighting tab: time of day, light brightness, then manual sun position
+const lightingTab = unifiedControls.getTabContainer('lighting');
+const timeSection = document.createElement('div');
+const brightnessSection = document.createElement('div');
+const sunSection = document.createElement('div');
+brightnessSection.className = 'section-divider';
+sunSection.className = 'section-divider';
+lightingTab.append(timeSection, brightnessSection, sunSection);
 
-// Link time of day controller to light animation for brightness-burst mode
+const sunControls = new SunControls(directionalLight, sunSection);
+const timeOfDayController = new TimeOfDayController(scene, ambientLight, directionalLight, sunControls, timeSection);
+
+// Brightness burst modes switch to night
 lightAnimation.timeOfDayController = timeOfDayController;
 
-// Initialize sun position controls in lighting tab
-const sunControls = new SunControls(
-    directionalLight,
-    unifiedControls.getTabContainer('lighting')
-);
-
-// Link sun controls to time of day controller
-timeOfDayController.sunControls = sunControls;
-
-// Initialize light brightness controls in lighting tab
-const lightControls = new LightControls(
-    lights,
-    lightAnimation,
-    unifiedControls.getTabContainer('lighting')
-);
+const lightControls = new LightControls(installation, lightAnimation, brightnessSection);
 
 // Link light controls back to animation for UI updates
 lightAnimation.lightControls = lightControls;
 
-// Window resize handling
-function onWindowResize() {
-    cameraController.onWindowResize();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Site-wide settings (scenery is rebuilt separately, before the installation)
+function applySite() {
+    const site = SITES[layout.siteId];
+    timeOfDayController.setSite(site);
+    displayControls.setVisibility(site.visibilityMiles);
+    document.title = `Speed of the Earth Simulator · ${site.name}`;
 }
 
-window.addEventListener('resize', onWindowResize);
+function fitSunToInstallation() {
+    sunControls.distance = Math.max(1500, installation.length);
+    sunControls.updateLightPosition();
+}
 
-// Parse URL parameters and apply settings
+function applyLayout() {
+    buildInstallation();
+    fitSunToInstallation();
+
+    lightAnimation.configure({
+        numLights: layout.numLights,
+        spacing: layout.spacing,
+        earthSpeed: siteEarthSpeed(SITES[layout.siteId])
+    });
+    animationModeControls.syncPointSelector();
+    cameraController.setInstallation(installation);
+    minimapControls.setInstallation(installation);
+    writeLayoutToURL(layout);
+}
+
+const siteControls = new SiteControls(
+    unifiedControls.getTabContainer('site'),
+    layout,
+    (newLayout, siteChanged) => {
+        layout = newLayout;
+        if (siteChanged) {
+            environment.build(SITES[layout.siteId].environment);
+            applySite();
+        }
+        applyLayout();
+    }
+);
+
+applySite();
+fitSunToInstallation();
+
+// Animation and camera settings from the URL (site and layout are read by readLayoutFromURL)
 function parseURLParameters() {
     const params = new URLSearchParams(window.location.search);
 
     // Animation mode
     const mode = params.get('mode') || params.get('animation');
     if (mode) {
-        const availableModes = lightAnimation.getAvailableModes();
-        const modeExists = availableModes.some(m => m.id === mode);
-        if (modeExists) {
-            lightAnimation.setAnimationMode(mode);
-            // Update the mode selector dropdown
-            const modeSelector = document.getElementById('mode-selector');
-            if (modeSelector) {
-                modeSelector.value = mode;
-            }
-            // Auto-select the animation tab
+        const modeSelector = document.getElementById('mode-selector');
+        if (lightAnimation.getAvailableModes().some(m => m.id === mode)) {
+            // The selector's change handler sets the mode and shows its controls
+            modeSelector.value = mode;
+            modeSelector.dispatchEvent(new Event('change'));
             unifiedControls.switchTab('animation');
-
-            // Show/hide point selector based on mode
-            const pointContainer = document.getElementById('point-selector-container');
-            if (pointContainer) {
-                if (mode === 'converge-point' || mode === 'diverge-point') {
-                    pointContainer.classList.remove('hidden');
-                } else {
-                    pointContainer.classList.add('hidden');
-                }
-            }
-
-            // Show/hide brightness controls based on mode
-            const brightnessContainer = document.getElementById('brightness-controls-container');
-            if (brightnessContainer) {
-                if (mode === 'brightness-burst' || mode === 'brightness-burst-realtime') {
-                    brightnessContainer.classList.remove('hidden');
-                } else {
-                    brightnessContainer.classList.add('hidden');
-                }
-            }
-
             console.log(`📍 URL: Set animation mode to "${mode}"`);
         } else {
             console.warn(`⚠️ URL: Invalid animation mode "${mode}"`);
@@ -361,57 +203,36 @@ function parseURLParameters() {
     }
 
     // Convergence/divergence point
-    const point = params.get('point');
-    if (point !== null) {
-        const pointNum = parseInt(point);
-        if (!isNaN(pointNum) && pointNum >= 0 && pointNum < 30) {
-            const currentMode = lightAnimation.animationMode;
-            if (currentMode === 'converge-point') {
-                lightAnimation.setConvergencePoint(pointNum);
-            } else if (currentMode === 'diverge-point') {
-                lightAnimation.setDivergencePoint(pointNum);
-            }
-            // Update point selector
-            const pointSelector = document.getElementById('point-selector');
-            const pointValue = document.getElementById('point-value');
-            if (pointSelector) pointSelector.value = pointNum;
-            if (pointValue) pointValue.textContent = pointNum;
-            console.log(`📍 URL: Set point to ${pointNum}`);
+    const point = parseInt(params.get('point'), 10);
+    if (Number.isInteger(point) && point >= 0 && point < layout.numLights) {
+        if (lightAnimation.animationMode === 'converge-point') {
+            lightAnimation.setConvergencePoint(point);
+        } else if (lightAnimation.animationMode === 'diverge-point') {
+            lightAnimation.setDivergencePoint(point);
         }
+        animationModeControls.syncPointSelector();
+        console.log(`📍 URL: Set point to ${point}`);
     }
 
     // Brightness settings
-    const lowBrightness = params.get('lowBrightness');
-    const highBrightness = params.get('highBrightness');
-    if (lowBrightness !== null) {
-        const brightness = parseInt(lowBrightness);
-        if (!isNaN(brightness)) {
-            lightAnimation.setLowBrightness(brightness);
-            const slider = document.getElementById('low-brightness-slider');
-            const value = document.getElementById('low-brightness-value');
-            if (slider) slider.value = brightness;
-            if (value) value.textContent = brightness;
-            console.log(`📍 URL: Set low brightness to ${brightness}`);
-        }
-    }
-    if (highBrightness !== null) {
-        const brightness = parseInt(highBrightness);
-        if (!isNaN(brightness)) {
-            lightAnimation.setHighBrightness(brightness);
-            const slider = document.getElementById('high-brightness-slider');
-            const value = document.getElementById('high-brightness-value');
-            if (slider) slider.value = brightness;
-            if (value) value.textContent = brightness;
-            console.log(`📍 URL: Set high brightness to ${brightness}`);
-        }
-    }
+    const setBrightnessFromURL = (name, apply, sliderId, valueId) => {
+        const brightness = parseInt(params.get(name), 10);
+        if (!Number.isInteger(brightness)) return;
+        apply(brightness);
+        const slider = document.getElementById(sliderId);
+        const value = document.getElementById(valueId);
+        if (slider) slider.value = brightness;
+        if (value) value.textContent = brightness;
+        console.log(`📍 URL: Set ${name} to ${brightness}`);
+    };
+    setBrightnessFromURL('lowBrightness', b => lightAnimation.setLowBrightness(b), 'low-brightness-slider', 'low-brightness-value');
+    setBrightnessFromURL('highBrightness', b => lightAnimation.setHighBrightness(b), 'high-brightness-slider', 'high-brightness-value');
 
     // Camera mode
     const cameraMode = params.get('camera') || params.get('cameraMode');
     if (cameraMode) {
         const validModes = ['walking', 'ground', 'ground_end', 'elevated', 'aerial', 'side', 'follow'];
-        const normalizedMode = cameraMode.toLowerCase();
-        if (validModes.includes(normalizedMode)) {
+        if (validModes.includes(cameraMode.toLowerCase())) {
             cameraController.setPreset(cameraMode.toUpperCase());
             console.log(`📍 URL: Set camera preset to "${cameraMode.toUpperCase()}"`);
         } else {
@@ -427,7 +248,6 @@ function parseURLParameters() {
         const x = camX !== null ? parseFloat(camX) : camera.position.x;
         const y = camY !== null ? parseFloat(camY) : camera.position.y;
         const z = camZ !== null ? parseFloat(camZ) : camera.position.z;
-
         if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
             camera.position.set(x, y, z);
             console.log(`📍 URL: Set camera position to (${x}, ${y}, ${z})`);
@@ -442,7 +262,6 @@ function parseURLParameters() {
         const x = targetX !== null ? parseFloat(targetX) : 0;
         const y = targetY !== null ? parseFloat(targetY) : 0;
         const z = targetZ !== null ? parseFloat(targetZ) : 0;
-
         if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
             camera.lookAt(x, y, z);
             console.log(`📍 URL: Set camera target to (${x}, ${y}, ${z})`);
@@ -450,10 +269,16 @@ function parseURLParameters() {
     }
 }
 
-// Apply URL parameters after a short delay to ensure UI is initialized
-setTimeout(() => {
-    parseURLParameters();
-}, 100);
+parseURLParameters();
+
+// Window resize handling
+function onWindowResize() {
+    cameraController.onWindowResize();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+}
+
+window.addEventListener('resize', onWindowResize);
 
 // Track time for delta calculations
 let lastTime = performance.now();
@@ -463,15 +288,15 @@ function animate() {
     requestAnimationFrame(animate);
 
     const currentTime = performance.now();
-    const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
+    // Clamp so a backgrounded tab doesn't cause a huge jump
+    const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.1);
     lastTime = currentTime;
 
-    // Update light animation
     lightAnimation.update(deltaTime);
 
     // Update camera controller with current wave position
-    const wavePosition = lightAnimation.getCurrentWavePosition();
-    cameraController.update(deltaTime, wavePosition);
+    cameraController.update(deltaTime, lightAnimation.getCurrentWavePosition());
+    timeOfDayController.update(camera);
 
     // Update minimap
     minimapControls.update();
@@ -479,8 +304,11 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// Start the animation loop
 animate();
 
-// Export scene, camera, renderer, lights, cameraController, lightAnimation, and lightControls for use by other modules
-export { scene, camera, renderer, lights, glowSpheres, cameraController, lightAnimation, lightControls };
+// Exposed for debugging from the browser console
+window.simulator = {
+    scene, camera, renderer, installation, environment, lightAnimation,
+    cameraController, timeOfDayController, siteControls, animationControls,
+    lightControls, minimapControls
+};

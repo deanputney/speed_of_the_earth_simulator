@@ -2,6 +2,15 @@
  * Keyboard controls for animation demonstration
  */
 
+/**
+ * True when a key event comes from a form field, so shortcuts don't fire while typing
+ */
+export function isTypingTarget(event) {
+    const target = event.target;
+    return target instanceof HTMLElement &&
+        (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+}
+
 export class AnimationControls {
     constructor(lightAnimation) {
         this.lightAnimation = lightAnimation;
@@ -12,9 +21,12 @@ export class AnimationControls {
 
     setupKeyboardListeners() {
         window.addEventListener('keydown', (event) => {
+            if (isTypingTarget(event)) return;
+
             switch(event.key.toLowerCase()) {
                 case ' ':
-                    // Spacebar: toggle animation on/off
+                    // Spacebar: toggle animation on/off (and don't "click" a focused button)
+                    event.preventDefault();
                     const status = this.lightAnimation.getStatus();
                     this.lightAnimation.setEnabled(!status.enabled);
                     console.log(`Animation ${status.enabled ? 'disabled' : 'enabled'}`);
@@ -99,7 +111,8 @@ export class AnimationControls {
         console.log('=== Animation Status ===');
         console.log(`Enabled: ${status.enabled}`);
         console.log(`Speed: ${status.speedMultiplier.toFixed(1)}x`);
-        console.log(`Earth rotation speed: ${status.earthRotationSpeed} ft/s`);
+        console.log(`Lights: ${status.numLights} at ${status.spacing} ft`);
+        console.log(`Earth rotation speed: ${status.earthRotationSpeed.toFixed(1)} ft/s`);
         console.log(`Time between lights: ${status.timeBetweenLights.toFixed(3)}s`);
         console.log(`Flash duration: ${status.flashDuration.toFixed(3)}s`);
         console.log(`Cycle duration: ${status.cycleDuration.toFixed(2)}s`);

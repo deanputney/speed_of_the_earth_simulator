@@ -6,11 +6,11 @@ import * as THREE from 'three';
  * Allows drag-and-drop teleportation by moving the character marker
  */
 export class MinimapControls {
-    constructor(camera, scene, cameraController, lights) {
+    constructor(camera, scene, cameraController, installation) {
         this.mainCamera = camera;
         this.mainScene = scene;
         this.cameraController = cameraController;
-        this.lights = lights;
+        this.installation = installation;
 
         // Minimap rendering
         this.minimapRenderer = null;
@@ -23,9 +23,8 @@ export class MinimapControls {
         this.isDragging = false;
         this.dragStartPos = new THREE.Vector2();
 
-        // World bounds (installation is 6000x6000 feet, view 6500x6500)
-        this.worldBounds = 3250; // Half width/height of view
-        this.groundBounds = 3000; // Hard limit for character position
+        // Half width/height of the view in feet; fitted to the row by fitToInstallation()
+        this.groundBounds = 3000;
 
         // Layer configuration
         // Layer 0: Default (visible to both cameras)
@@ -35,8 +34,28 @@ export class MinimapControls {
         this.setupMinimap();
         this.configureCameraLayers();
         this.createCharacter();
-        this.createLightMarkers();
+        this.fitToInstallation();
         this.setupInteraction();
+    }
+
+    /**
+     * Fit the view to the row of lights and place their markers (call after the layout changes)
+     */
+    setInstallation(installation) {
+        this.installation = installation;
+        this.fitToInstallation();
+    }
+
+    fitToInstallation() {
+        this.groundBounds = Math.max(3000, this.installation.length / 2 + 500);
+        Object.assign(this.minimapCamera, {
+            left: -this.groundBounds,
+            right: this.groundBounds,
+            top: this.groundBounds,
+            bottom: -this.groundBounds
+        });
+        this.minimapCamera.updateProjectionMatrix();
+        this.createLightMarkers();
     }
 
     /**
@@ -65,11 +84,11 @@ export class MinimapControls {
             this.groundBounds,  // top
             -this.groundBounds, // bottom
             0.1,                // near
-            1000                // far
+            6000                // far
         );
 
-        // Position camera above looking straight down
-        this.minimapCamera.position.set(0, 500, 0);
+        // Position camera above the terrain looking straight down
+        this.minimapCamera.position.set(0, 3000, 0);
         this.minimapCamera.lookAt(0, 0, 0);
     }
 
@@ -100,8 +119,6 @@ export class MinimapControls {
         const circleGeometry = new THREE.CircleGeometry(50, 32);
         const circleMaterial = new THREE.MeshBasicMaterial({
             color: 0x4CAF50,
-            emissive: 0x4CAF50,
-            emissiveIntensity: 0.7,
             side: THREE.DoubleSide
         });
         const circle = new THREE.Mesh(circleGeometry, circleMaterial);
@@ -123,8 +140,6 @@ export class MinimapControls {
 
         const triangleMaterial = new THREE.MeshBasicMaterial({
             color: 0x4CAF50,  // Green to match position circle
-            emissive: 0x4CAF50,
-            emissiveIntensity: 0.7,
             side: THREE.DoubleSide
         });
         this.directionIndicator = new THREE.Mesh(triangleGeometry, triangleMaterial);
@@ -143,26 +158,25 @@ export class MinimapControls {
      * Uses minimap-only layer so they're not visible in main camera
      */
     createLightMarkers() {
+        const visible = this.minimapContainer.style.display !== 'none';
+        for (const marker of this.lightMarkers) {
+            this.mainScene.remove(marker);
+            marker.geometry.dispose();
+            marker.material.dispose();
+        }
         this.lightMarkers = [];
 
-        for (let i = 0; i < this.lights.length; i++) {
-            const light = this.lights[i];
-
+        for (const fixture of this.installation.fixtures) {
             // Create white dot at ground level (visible on minimap)
             const markerGeometry = new THREE.SphereGeometry(20, 8, 8);
             const markerMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffffff,
-                emissive: 0xffffff,
-                emissiveIntensity: 0.8
+                color: 0xffffff
             });
             const marker = new THREE.Mesh(markerGeometry, markerMaterial);
 
-            // Position at light location (at ground level for minimap)
-            marker.position.set(
-                light.position.x,
-                0.5, // Slightly above ground
-                light.position.z
-            );
+            // Position at light location, just above the ground
+            marker.position.copy(fixture.base).setY(fixture.base.y + 1);
+            marker.visible = visible;
 
             // Set marker to minimap-only layer (not visible in main camera)
             marker.layers.set(this.MINIMAP_LAYER);
@@ -300,10 +314,12 @@ export class MinimapControls {
     update() {
         if (!this.character || !this.minimapCamera || !this.minimapRenderer) return;
 
-        // Update circle position to match camera (only X and Z, Y stays at ground)
-        this.character.position.x = this.mainCamera.position.x;
-        this.character.position.z = this.mainCamera.position.z;
-        this.character.position.y = 0.5; // Keep at ground level for minimap visibility
+        // Only render while shown
+        if (this.minimapContainer.style.display === 'none') return;
+
+        // Update circle position to match camera, just above the ground
+        const { x, z } = this.mainCamera.position;
+        this.character.position.set(x, this.installation.groundHeight(x, z) + 2, z);
 
         // Update direction indicator rotation to match camera yaw
         // Extract yaw from camera quaternion

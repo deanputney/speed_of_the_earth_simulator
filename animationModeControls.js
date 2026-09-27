@@ -82,14 +82,11 @@ export class AnimationModeControls {
         pointInput.type = 'range';
         pointInput.id = 'point-selector';
         pointInput.min = '0';
-        pointInput.max = '29';
-        pointInput.value = '15';
         pointInput.className = 'point-selector';
 
         const pointValue = document.createElement('span');
         pointValue.id = 'point-value';
         pointValue.className = 'point-value';
-        pointValue.textContent = '15';
 
         pointContainer.appendChild(pointLabel);
         pointContainer.appendChild(pointInput);
@@ -182,6 +179,23 @@ export class AnimationModeControls {
 
         brightnessContainer.appendChild(resetButton);
         container.appendChild(brightnessContainer);
+
+        this.pointInput = pointInput;
+        this.pointValue = pointValue;
+        this.syncPointSelector();
+    }
+
+    /**
+     * Match the point slider to the current number of lights (call after the layout changes)
+     */
+    syncPointSelector() {
+        const status = this.lightAnimation.getStatus();
+        const point = this.lightAnimation.animationMode === 'converge-point'
+            ? status.convergencePoint
+            : status.divergencePoint;
+        this.pointInput.max = String(status.numLights - 1);
+        this.pointInput.value = String(point);
+        this.pointValue.textContent = String(point);
     }
 
     getModeDescription(modeId) {
@@ -204,6 +218,7 @@ export class AnimationModeControls {
             // Show/hide point selector
             const pointContainer = document.getElementById('point-selector-container');
             if (mode === 'converge-point' || mode === 'diverge-point') {
+                this.syncPointSelector();
                 pointContainer.classList.remove('hidden');
             } else {
                 pointContainer.classList.add('hidden');

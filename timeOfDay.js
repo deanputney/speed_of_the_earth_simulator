@@ -1,249 +1,255 @@
 import * as THREE from 'three';
+import { sunPosition, sunTimes, zonedDate, todayIn, formatMinutes } from './solar.js';
 
 /**
  * Time of Day Controller
- * Manages scene lighting and skybox for different times of day
+ * Places the sun for the site's latitude/longitude, date and local time,
+ * and derives sky, ambient and fog colors from the sun's elevation.
  */
+
+// Lighting as a function of sun elevation (degrees); interpolated between keyframes
+const SKY_KEYFRAMES = [
+    { elevation: -18, sky: 0x000814, horizon: 0x0b1020, ambient: 0x4a5c7a, ambientIntensity: 0.15, light: 0x6688aa, lightIntensity: 0.4 },
+    { elevation: -8, sky: 0x0b1733, horizon: 0x2a3050, ambient: 0x56648a, ambientIntensity: 0.17, light: 0x6688aa, lightIntensity: 0.35 },
+    { elevation: -3, sky: 0x1e3a5f, horizon: 0xff6347, ambient: 0xff8866, ambientIntensity: 0.22, light: 0xff7744, lightIntensity: 0.6 },
+    { elevation: 2, sky: 0x3d5f8f, horizon: 0xff8a4a, ambient: 0xff9966, ambientIntensity: 0.25, light: 0xff8850, lightIntensity: 1.5 },
+    { elevation: 10, sky: 0x5f8fc4, horizon: 0xffc070, ambient: 0xffcc88, ambientIntensity: 0.3, light: 0xffaa44, lightIntensity: 2.0 },
+    { elevation: 25, sky: 0x87ceeb, horizon: 0xb0d4f1, ambient: 0xdddddd, ambientIntensity: 0.3, light: 0xffffff, lightIntensity: 2.5 }
+];
+
+// Below this sun elevation the directional light becomes moonlight from the south
+const MOONLIGHT_BELOW = -4;
+const MOON = { azimuth: 180, elevation: 35 };
+
+// Preset buttons jump to times relative to the day's sunrise/sunset
+const PRESETS = {
+    'night': { name: 'Night', minutes: t => t.sunset + 150 },
+    'dawn': { name: 'Dawn', minutes: t => t.sunrise - 15 },
+    'day': { name: 'Day', minutes: t => t.solarNoon + 90 },
+    'golden-hour': { name: 'Golden Hour', minutes: t => t.sunset - 40 },
+    'dusk': { name: 'Dusk', minutes: t => t.sunset + 15 }
+};
+
+const SKY_VERTEX_SHADER = `
+    varying vec3 vDirection;
+    void main() {
+        vDirection = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+const SKY_FRAGMENT_SHADER = `
+    uniform vec3 topColor;
+    uniform vec3 horizonColor;
+    uniform vec3 sunColor;
+    uniform vec3 sunDirection;
+    uniform float sunGlow;
+    varying vec3 vDirection;
+    void main() {
+        vec3 direction = normalize(vDirection);
+        float height = clamp(direction.y, 0.0, 1.0);
+        vec3 color = mix(horizonColor, topColor, pow(height, 0.45));
+        float toSun = max(dot(direction, sunDirection), 0.0);
+        color += sunColor * (pow(toSun, 12.0) * 0.35 + pow(toSun, 800.0) * 1.5) * sunGlow;
+        gl_FragColor = vec4(color, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+    }
+`;
+
+function lerpKeyframes(elevation) {
+    const frames = SKY_KEYFRAMES;
+    if (elevation <= frames[0].elevation) return frames[0];
+    if (elevation >= frames[frames.length - 1].elevation) return frames[frames.length - 1];
+
+    const upper = frames.findIndex(f => f.elevation > elevation);
+    const a = frames[upper - 1];
+    const b = frames[upper];
+    const t = (elevation - a.elevation) / (b.elevation - a.elevation);
+    const color = key => new THREE.Color(a[key]).lerp(new THREE.Color(b[key]), t);
+    return {
+        sky: color('sky'),
+        horizon: color('horizon'),
+        ambient: color('ambient'),
+        light: color('light'),
+        ambientIntensity: a.ambientIntensity + (b.ambientIntensity - a.ambientIntensity) * t,
+        lightIntensity: a.lightIntensity + (b.lightIntensity - a.lightIntensity) * t
+    };
+}
+
+function directionFromAngles(azimuth, elevation, target = new THREE.Vector3()) {
+    const az = THREE.MathUtils.degToRad(azimuth);
+    const el = THREE.MathUtils.degToRad(elevation);
+    return target.set(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az));
+}
+
 export class TimeOfDayController {
-    constructor(scene, ambientLight, directionalLight) {
+    constructor(scene, ambientLight, directionalLight, sunControls, container) {
         this.scene = scene;
         this.ambientLight = ambientLight;
         this.directionalLight = directionalLight;
-        this.currentPreset = 'day';
+        this.sunControls = sunControls;
+        this.container = container;
 
-        // Sun controls reference (will be set externally)
-        this.sunControls = null;
+        this.site = null;
+        this.date = null;
+        this.minutes = 12 * 60;
+        this.currentPreset = 'dusk';
+        this.times = null;
 
-        // Define time of day presets with sun angles and reduced ambient
-        this.presets = {
-            'night': {
-                name: 'Night',
-                skyColor: 0x000814,
-                horizonColor: 0x1a1a2e,
-                ambientColor: 0x4a5c7a,
-                ambientIntensity: 0.15,  // Very dim
-                sunColor: 0x6688aa,  // Moonlight
-                sunIntensity: 0.4,
-                sunAzimuth: 180,    // South (moon in the south)
-                sunElevation: 30    // Low angle
-            },
-            'dawn': {
-                name: 'Dawn',
-                skyColor: 0x4a5c8a,
-                horizonColor: 0xff6b35,
-                ambientColor: 0xff9966,
-                ambientIntensity: 0.2,  // Dim
-                sunColor: 0xffaa77,
-                sunIntensity: 1.5,
-                sunAzimuth: 90,     // East (sunrise)
-                sunElevation: 10    // Just above horizon
-            },
-            'day': {
-                name: 'Day',
-                skyColor: 0x87ceeb,
-                horizonColor: 0xb0d4f1,
-                ambientColor: 0xdddddd,
-                ambientIntensity: 0.3,  // Reduced from 0.8
-                sunColor: 0xffffff,
-                sunIntensity: 2.5,      // Strong sun
-                sunAzimuth: 45,         // Northeast
-                sunElevation: 60        // High in sky
-            },
-            'golden-hour': {
-                name: 'Golden Hour',
-                skyColor: 0xff9a56,
-                horizonColor: 0xffd700,
-                ambientColor: 0xffcc88,
-                ambientIntensity: 0.3,  // Moderate
-                sunColor: 0xffaa44,
-                sunIntensity: 2.0,
-                sunAzimuth: 280,    // West-northwest
-                sunElevation: 15    // Low angle for golden light
-            },
-            'dusk': {
-                name: 'Dusk',
-                skyColor: 0x1e3a5f,
-                horizonColor: 0xff6347,
-                ambientColor: 0xff8866,
-                ambientIntensity: 0.25,  // Dim
-                sunColor: 0xff7744,
-                sunIntensity: 1.8,
-                sunAzimuth: 270,    // West (sunset)
-                sunElevation: 8     // Just above horizon
-            }
-        };
+        this.sky = this.createSky();
+        scene.add(this.sky);
 
         this.createUI();
-        this.applyPreset('day');
+    }
+
+    createSky() {
+        this.skyUniforms = {
+            topColor: { value: new THREE.Color() },
+            horizonColor: { value: new THREE.Color() },
+            sunColor: { value: new THREE.Color() },
+            sunDirection: { value: new THREE.Vector3(0, 1, 0) },
+            sunGlow: { value: 0 }
+        };
+        const sky = new THREE.Mesh(
+            new THREE.SphereGeometry(1000, 32, 16),
+            new THREE.ShaderMaterial({
+                uniforms: this.skyUniforms,
+                vertexShader: SKY_VERTEX_SHADER,
+                fragmentShader: SKY_FRAGMENT_SHADER,
+                side: THREE.BackSide,
+                depthWrite: false,
+                depthTest: false
+            })
+        );
+        sky.name = 'sky';
+        sky.renderOrder = -1;
+        sky.frustumCulled = false;
+        return sky;
     }
 
     createUI() {
-        // Create UI container
-        const container = document.createElement('div');
-        container.id = 'time-of-day-controls';
-        container.style.cssText = `
-            position: fixed;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            z-index: 1000;
+        this.container.innerHTML = `
+            <div class="controls-header">Time of Day</div>
+            <div class="field-row">
+                <label for="sky-date">Date</label>
+                <input type="date" id="sky-date" class="field-input">
+            </div>
+            <div class="slider-row">
+                <div class="slider-label">
+                    <span>Local time</span>
+                    <span id="sky-time-value" class="slider-value"></span>
+                </div>
+                <input type="range" id="sky-time" min="0" max="1435" step="5">
+                <div id="sky-sun-times" class="field-hint"></div>
+            </div>
+            <div class="preset-grid">
+                ${Object.entries(PRESETS).map(([key, preset]) => `
+                    <button class="camera-btn preset-btn" data-sky-preset="${key}">${preset.name}</button>
+                `).join('')}
+            </div>
         `;
 
-        // Title
-        const title = document.createElement('div');
-        title.textContent = 'TIME OF DAY';
-        title.style.cssText = `
-            font-size: 11px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            letter-spacing: 1px;
-        `;
-        container.appendChild(title);
+        this.dateInput = this.container.querySelector('#sky-date');
+        this.timeSlider = this.container.querySelector('#sky-time');
+        this.timeValue = this.container.querySelector('#sky-time-value');
+        this.sunTimesLabel = this.container.querySelector('#sky-sun-times');
+        this.presetButtons = this.container.querySelectorAll('[data-sky-preset]');
 
-        // Create buttons for each preset
-        const buttonsContainer = document.createElement('div');
-        buttonsContainer.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        `;
-
-        Object.keys(this.presets).forEach(presetKey => {
-            const button = document.createElement('button');
-            button.textContent = this.presets[presetKey].name;
-            button.dataset.preset = presetKey;
-            button.style.cssText = `
-                padding: 8px 16px;
-                background: rgba(255, 255, 255, 0.1);
-                border: 1px solid rgba(255, 255, 255, 0.3);
-                border-radius: 4px;
-                color: white;
-                cursor: pointer;
-                font-size: 13px;
-                transition: all 0.2s;
-            `;
-
-            // Hover effect
-            button.onmouseenter = () => {
-                if (button.dataset.preset !== this.currentPreset) {
-                    button.style.background = 'rgba(255, 255, 255, 0.2)';
-                }
-            };
-            button.onmouseleave = () => {
-                if (button.dataset.preset !== this.currentPreset) {
-                    button.style.background = 'rgba(255, 255, 255, 0.1)';
-                }
-            };
-
-            // Click handler
-            button.onclick = () => {
-                this.applyPreset(presetKey);
-                // Update active state
-                buttonsContainer.querySelectorAll('button').forEach(btn => {
-                    if (btn.dataset.preset === presetKey) {
-                        btn.style.background = 'rgba(76, 175, 80, 0.6)';
-                        btn.style.borderColor = 'rgba(76, 175, 80, 1)';
-                    } else {
-                        btn.style.background = 'rgba(255, 255, 255, 0.1)';
-                        btn.style.borderColor = 'rgba(255, 255, 255, 0.3)';
-                    }
-                });
-            };
-
-            // Set initial active state
-            if (presetKey === this.currentPreset) {
-                button.style.background = 'rgba(76, 175, 80, 0.6)';
-                button.style.borderColor = 'rgba(76, 175, 80, 1)';
-            }
-
-            buttonsContainer.appendChild(button);
+        this.dateInput.addEventListener('change', () => {
+            if (!this.dateInput.value) return;
+            this.date = this.dateInput.value;
+            this.refreshSunTimes();
+            if (this.currentPreset) this.applyPreset(this.currentPreset);
+            else this.setMinutes(this.minutes);
         });
 
-        container.appendChild(buttonsContainer);
-        document.body.appendChild(container);
+        this.timeSlider.addEventListener('input', () => {
+            this.currentPreset = null;
+            this.setMinutes(parseInt(this.timeSlider.value, 10));
+        });
+
+        this.presetButtons.forEach(button => {
+            button.addEventListener('click', () => this.applyPreset(button.dataset.skyPreset));
+        });
+    }
+
+    /**
+     * Switch to a site; keeps the current preset (e.g. Dusk) if one is active.
+     */
+    setSite(site) {
+        this.site = site;
+        this.date = site.defaultDate ?? todayIn(site.timeZone);
+        this.dateInput.value = this.date;
+        this.refreshSunTimes();
+        if (this.currentPreset) this.applyPreset(this.currentPreset);
+        else this.setMinutes(this.minutes);
+    }
+
+    refreshSunTimes() {
+        const { latitude, longitude, timeZone } = this.site;
+        const times = sunTimes(this.date, latitude, longitude, timeZone);
+        // Fall back to fixed clock times if the sun doesn't rise/set (not an issue at these sites)
+        this.times = {
+            sunrise: times.sunrise ?? 6 * 60,
+            sunset: times.sunset ?? 18 * 60,
+            solarNoon: times.solarNoon
+        };
+        this.sunTimesLabel.textContent =
+            `Sunrise ${formatMinutes(this.times.sunrise)} · Sunset ${formatMinutes(this.times.sunset)}`;
     }
 
     applyPreset(presetKey) {
-        const preset = this.presets[presetKey];
+        const preset = PRESETS[presetKey];
         if (!preset) return;
-
         this.currentPreset = presetKey;
-
-        // Create gradient skybox background
-        this.createGradientSky(preset.skyColor, preset.horizonColor);
-
-        // Update ambient light - now much dimmer to let sun dominate
-        this.ambientLight.color.setHex(preset.ambientColor);
-        this.ambientLight.intensity = preset.ambientIntensity;
-
-        // Update directional light (sun/moon) color
-        this.directionalLight.color.setHex(preset.sunColor);
-
-        // Update sun position and intensity via sun controls
-        if (this.sunControls) {
-            this.sunControls.applyPreset(
-                preset.sunAzimuth,
-                preset.sunElevation,
-                preset.sunIntensity
-            );
-        } else {
-            // Fallback if sun controls not initialized yet
-            this.directionalLight.intensity = preset.sunIntensity;
-        }
-
-        console.log(`Time of day changed to: ${preset.name}`);
+        const minutes = Math.round(preset.minutes(this.times) / 5) * 5;
+        this.setMinutes(((minutes % 1440) + 1440) % 1440);
     }
 
-    createGradientSky(skyColor, horizonColor) {
-        // Create a canvas for the gradient
-        const canvas = document.createElement('canvas');
-        canvas.width = 2;
-        canvas.height = 512;
-
-        const ctx = canvas.getContext('2d');
-        const gradient = ctx.createLinearGradient(0, 0, 0, 512);
-
-        // Sky color at top
-        const skyColorObj = new THREE.Color(skyColor);
-        gradient.addColorStop(0, `rgb(${skyColorObj.r * 255}, ${skyColorObj.g * 255}, ${skyColorObj.b * 255})`);
-
-        // Horizon color at bottom
-        const horizonColorObj = new THREE.Color(horizonColor);
-        gradient.addColorStop(1, `rgb(${horizonColorObj.r * 255}, ${horizonColorObj.g * 255}, ${horizonColorObj.b * 255})`);
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 2, 512);
-
-        // Create texture from canvas
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.colorSpace = THREE.SRGBColorSpace;
-
-        // Create sphere geometry for skybox
-        const skyGeometry = new THREE.SphereGeometry(5000, 32, 15);
-        const skyMaterial = new THREE.MeshBasicMaterial({
-            map: texture,
-            side: THREE.BackSide
+    setMinutes(minutes) {
+        this.minutes = minutes;
+        this.timeSlider.value = minutes;
+        this.timeValue.textContent = formatMinutes(minutes);
+        this.presetButtons.forEach(button => {
+            button.classList.toggle('active', button.dataset.skyPreset === this.currentPreset);
         });
 
-        // Remove old skybox if exists
-        const oldSky = this.scene.getObjectByName('skybox');
-        if (oldSky) {
-            this.scene.remove(oldSky);
-        }
+        const { latitude, longitude, timeZone } = this.site;
+        const sun = sunPosition(zonedDate(this.date, minutes, timeZone), latitude, longitude);
+        this.applyLighting(sun);
+    }
 
-        // Add new skybox
-        const sky = new THREE.Mesh(skyGeometry, skyMaterial);
-        sky.name = 'skybox';
-        sky.rotation.x = Math.PI; // Rotate so gradient goes from top to bottom
-        this.scene.add(sky);
+    applyLighting(sun) {
+        const look = lerpKeyframes(sun.elevation);
 
-        // Also update the background color to match the sky
-        this.scene.background = new THREE.Color(skyColor);
+        this.skyUniforms.topColor.value.copy(new THREE.Color(look.sky));
+        this.skyUniforms.horizonColor.value.copy(new THREE.Color(look.horizon));
+        this.skyUniforms.sunColor.value.copy(new THREE.Color(look.light));
+        directionFromAngles(sun.azimuth, sun.elevation, this.skyUniforms.sunDirection.value);
+        this.skyUniforms.sunGlow.value = THREE.MathUtils.smoothstep(sun.elevation, -6, 2);
+
+        this.scene.background = new THREE.Color(look.sky);
+        if (this.scene.fog) this.scene.fog.color.copy(new THREE.Color(look.horizon));
+
+        this.ambientLight.color.copy(new THREE.Color(look.ambient));
+        this.ambientLight.intensity = look.ambientIntensity;
+        this.directionalLight.color.copy(new THREE.Color(look.light));
+
+        const light = sun.elevation >= MOONLIGHT_BELOW
+            ? { azimuth: sun.azimuth, elevation: Math.max(sun.elevation, 1) }
+            : MOON;
+        this.sunControls.applyPreset(
+            Math.round(light.azimuth),
+            Math.round(light.elevation),
+            look.lightIntensity
+        );
+    }
+
+    /**
+     * Keep the sky centered on the viewer
+     */
+    update(camera) {
+        this.sky.position.copy(camera.position);
     }
 }
