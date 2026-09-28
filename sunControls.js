@@ -6,6 +6,7 @@
 export class SunControls {
     constructor(directionalLight, container = null) {
         this.light = directionalLight;
+        this.center = directionalLight.target.position.clone();
         this.container = container;
 
         // Sun position in spherical coordinates
@@ -129,8 +130,9 @@ export class SunControls {
         const y = this.distance * Math.sin(elevationRad);
         const z = this.distance * Math.cos(elevationRad) * Math.sin(azimuthRad);
 
-        this.light.position.set(x, y, z);
-        this.light.target.position.set(0, 0, 0);
+        // Around the installation, so its shadow camera covers the row
+        this.light.position.set(x, y, z).add(this.center);
+        this.light.target.position.copy(this.center);
         this.light.target.updateMatrixWorld();
     }
 

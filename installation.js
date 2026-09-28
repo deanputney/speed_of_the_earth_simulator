@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /**
  * The row of strobe fixtures.
  *
- * Fixtures are laid out along a straight line centered on the origin. Positions along
+ * Fixtures are laid out along a straight line through `center`. Positions along
  * the line are expressed as "along" distances in feet: light 0 sits at -length/2 and
  * the wave travels toward +length/2 (the travel bearing).
  */
@@ -76,6 +76,7 @@ export class Installation {
         this.direction = new THREE.Vector3(0, 0, 1);
         this.side = new THREE.Vector3(1, 0, 0);
         this.groundHeight = () => 0;
+        this.center = new THREE.Vector3();
 
         // Resources shared by every fixture
         this.glowTexture = createGlowTexture();
@@ -116,7 +117,7 @@ export class Installation {
      * `side` feet to the left of the line and `height` feet above the ground.
      */
     pointAt(along, height = 0, side = 0, target = new THREE.Vector3()) {
-        target.copy(this.direction).multiplyScalar(along).addScaledVector(this.side, side);
+        target.copy(this.direction).multiplyScalar(along).addScaledVector(this.side, side).add(this.center);
         return target.setY(this.groundHeight(target.x, target.z) + height);
     }
 
@@ -144,16 +145,17 @@ export class Installation {
     }
 
     /**
-     * @param {object} layout - { numLights, spacing, headHeight, travelBearing }
+     * @param {object} layout - { numLights, spacing, headHeight, travelBearing, center: [x, z] }
      * @param {function} groundHeight - (x, z) => ground elevation in feet
      */
-    build({ numLights, spacing, headHeight, travelBearing }, groundHeight = () => 0) {
+    build({ numLights, spacing, headHeight, travelBearing, center = [0, 0] }, groundHeight = () => 0) {
         this.clear();
 
         this.numLights = numLights;
         this.spacing = spacing;
         this.headHeight = headHeight;
         this.groundHeight = groundHeight;
+        this.center.set(center[0], 0, center[1]);
 
         // Bearing: 0 = North (-Z), 90 = East (+X)
         const bearing = travelBearing * Math.PI / 180;

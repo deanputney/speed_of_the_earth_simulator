@@ -12,7 +12,7 @@ import { UnifiedControls } from './unifiedControls.js';
 import { SiteControls } from './siteControls.js';
 import { LightControls } from './lightControls.js';
 import { MinimapControls } from './minimapControls.js';
-import { SITES, siteEarthSpeed, readLayoutFromURL, writeLayoutToURL } from './sites.js';
+import { SITES, siteEarthSpeed, sitePosition, readLayoutFromURL, writeLayoutToURL } from './sites.js';
 
 // Scene setup
 // Scale: 1 THREE.js unit = 1 foot. North = -Z, East = +X.
@@ -61,9 +61,9 @@ const environment = new Environment(scene);
 const installation = new Installation(scene);
 
 function buildInstallation() {
-    const site = SITES[layout.siteId];
+    const { travelBearing, center } = sitePosition(layout.siteId, layout.positionId);
     installation.build(
-        { ...layout, travelBearing: site.travelBearing },
+        { ...layout, travelBearing, center },
         (x, z) => environment.groundHeightAt(x, z)
     );
 
@@ -148,6 +148,7 @@ function applySite() {
 }
 
 function fitSunToInstallation() {
+    sunControls.center.copy(installation.center);
     sunControls.distance = Math.max(1500, installation.length);
     sunControls.updateLightPosition();
 }

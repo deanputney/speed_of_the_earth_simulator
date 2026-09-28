@@ -12,13 +12,20 @@ export const SITES = {
         latitude: 40.7864,
         longitude: -119.2065,
         timeZone: 'America/Los_Angeles',
-        // Compass bearing the wave travels toward. The 2024 installation ran east to west,
-        // i.e. against Earth's rotation, so the flash stays fixed relative to the sun.
-        travelBearing: 270,
         // Published figure the 2024 installation was timed to
         earthSpeed: 1156,
         defaultDate: '2024-08-29',
-        defaultLayout: { numLights: 30, spacing: 162 },
+        positions: {
+            'deep-playa': {
+                name: 'Deep playa, east–west',
+                // The 2024 installation ran east to west, i.e. against Earth's rotation,
+                // so the flash stays fixed relative to the sun
+                travelBearing: 270,
+                center: [0, 0],
+                defaultLayout: { numLights: 30, spacing: 162 }
+            }
+        },
+        defaultPosition: 'deep-playa',
         visibilityMiles: 7,
         environment: 'desert'
     },
@@ -26,13 +33,28 @@ export const SITES = {
         id: 'crissy-field',
         name: 'Crissy Field',
         place: 'San Francisco, CA',
-        // Golden Gate Promenade along the old airfield
+        // Scenery origin: the Golden Gate Promenade along the old airfield
         latitude: 37.8047,
         longitude: -122.4628,
         timeZone: 'America/Los_Angeles',
-        travelBearing: 270,
         defaultDate: null, // today
-        defaultLayout: { numLights: 30, spacing: 83.33 },
+        positions: {
+            'along-beach': {
+                name: 'Airfield, parallel to the beach',
+                // From the site map (Sep 2026): 37.80407 N, 122.46732 W to
+                // 37.80561 N, 122.45453 W, ~3,750 ft on a bearing of ~81°
+                travelBearing: 261.4,
+                center: [542, -51],
+                defaultLayout: { numLights: 46, spacing: 83.33 }
+            },
+            'promenade': {
+                name: 'Promenade, due east–west',
+                travelBearing: 270,
+                center: [0, 0],
+                defaultLayout: { numLights: 30, spacing: 83.33 }
+            }
+        },
+        defaultPosition: 'along-beach',
         visibilityMiles: 5,
         environment: 'crissy-field'
     }
@@ -80,12 +102,30 @@ export function siteEarthSpeed(site) {
 }
 
 /**
- * Read site/layout from the URL, e.g. ?site=crissy-field&lights=30&spacing=83.33&height=10
+ * Where the row sits at a site: { name, travelBearing, center: [x, z] feet, defaultLayout }
+ */
+export function sitePosition(siteId, positionId) {
+    const site = SITES[siteId];
+    return site.positions[positionId] ?? site.positions[site.defaultPosition];
+}
+
+/**
+ * Site, position and that position's default layout
+ */
+export function defaultLayoutFor(siteId, positionId = SITES[siteId].defaultPosition) {
+    return { siteId, positionId, ...sitePosition(siteId, positionId).defaultLayout };
+}
+
+/**
+ * Read site/layout from the URL,
+ * e.g. ?site=crissy-field&position=along-beach&lights=46&spacing=83.33&height=10
  */
 export function readLayoutFromURL() {
     const params = new URLSearchParams(window.location.search);
     const siteId = SITES[params.get('site')] ? params.get('site') : DEFAULT_SITE;
     const site = SITES[siteId];
+    const positionId = site.positions[params.get('position')] ? params.get('position') : site.defaultPosition;
+    const { defaultLayout } = site.positions[positionId];
 
     const numberParam = (name, key, fallback) => {
         const value = parseFloat(params.get(name));
@@ -94,8 +134,9 @@ export function readLayoutFromURL() {
 
     return {
         siteId,
-        numLights: Math.round(numberParam('lights', 'numLights', site.defaultLayout.numLights)),
-        spacing: numberParam('spacing', 'spacing', site.defaultLayout.spacing),
+        positionId,
+        numLights: Math.round(numberParam('lights', 'numLights', defaultLayout.numLights)),
+        spacing: numberParam('spacing', 'spacing', defaultLayout.spacing),
         headHeight: numberParam('height', 'headHeight', DEFAULT_HEAD_HEIGHT)
     };
 }
@@ -103,6 +144,7 @@ export function readLayoutFromURL() {
 export function writeLayoutToURL(layout) {
     const params = new URLSearchParams(window.location.search);
     params.set('site', layout.siteId);
+    params.set('position', layout.positionId);
     params.set('lights', String(layout.numLights));
     params.set('spacing', String(layout.spacing));
     params.set('height', String(layout.headHeight));

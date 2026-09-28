@@ -1,4 +1,4 @@
-import { SITES, SPACING_PRESETS, LIMITS, clampToLimit, siteEarthSpeed } from './sites.js';
+import { SITES, SPACING_PRESETS, LIMITS, clampToLimit, siteEarthSpeed, sitePosition, defaultLayoutFor } from './sites.js';
 
 /**
  * Site Controls
@@ -11,10 +11,16 @@ function formatNumber(value, digits = 0) {
     return value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+function compassPoint(bearing) {
+    return COMPASS[Math.round(bearing / 22.5) % 16];
+}
+
 export class SiteControls {
     /**
      * @param {HTMLElement} container
-     * @param {object} layout - initial { siteId, numLights, spacing, headHeight }
+     * @param {object} layout - initial { siteId, positionId, numLights, spacing, headHeight }
      * @param {function} onChange - called with the new layout and whether the site changed
      */
     constructor(container, layout, onChange) {
@@ -40,7 +46,11 @@ export class SiteControls {
                     `).join('')}
                 </select>
             </div>
-            <div class="field-hint">Switching location loads that site's default layout.</div>
+            <div id="position-row" class="mode-select-container">
+                <label for="position-selector" class="field-hint">Position</label>
+                <select id="position-selector" class="mode-selector"></select>
+            </div>
+            <div class="field-hint">Switching location or position loads its default layout.</div>
 
             <div class="controls-header section-header">Layout</div>
             <div class="field-row">
@@ -68,14 +78,19 @@ export class SiteControls {
         `;
 
         this.siteSelect = this.container.querySelector('#site-selector');
+        this.positionRow = this.container.querySelector('#position-row');
+        this.positionSelect = this.container.querySelector('#position-selector');
         this.spacingInput = this.container.querySelector('#layout-spacing');
         this.countInput = this.container.querySelector('#layout-count');
         this.heightInput = this.container.querySelector('#layout-height');
         this.stats = this.container.querySelector('#layout-stats');
 
         this.siteSelect.addEventListener('change', () => {
-            const site = SITES[this.siteSelect.value];
-            this.update({ siteId: site.id, ...site.defaultLayout }, true);
+            this.update(defaultLayoutFor(this.siteSelect.value), true);
+        });
+
+        this.positionSelect.addEventListener('change', () => {
+            this.update(defaultLayoutFor(this.layout.siteId, this.positionSelect.value));
         });
 
         // 'change' fires on blur/enter, so the scene isn't rebuilt on every keystroke
@@ -121,10 +136,17 @@ export class SiteControls {
     }
 
     render() {
-        const { siteId, numLights, spacing, headHeight } = this.layout;
+        const { siteId, positionId, numLights, spacing, headHeight } = this.layout;
         const site = SITES[siteId];
+        const position = sitePosition(siteId, positionId);
 
         this.siteSelect.value = siteId;
+        const positions = Object.entries(site.positions);
+        this.positionRow.hidden = positions.length < 2;
+        this.positionSelect.innerHTML = positions
+            .map(([id, p]) => `<option value="${id}">${p.name}</option>`)
+            .join('');
+        this.positionSelect.value = positionId;
         this.spacingInput.value = spacing;
         this.countInput.value = numLights;
         this.heightInput.value = headHeight;
@@ -142,6 +164,7 @@ export class SiteControls {
             ['Time between flashes', `${formatNumber(interval * 1000, 1)} ms`],
             ['Flashes per second', formatNumber(1 / interval, 1)],
             ['Row length', `${formatNumber(length)} ft · ${formatNumber(length / FEET_PER_MILE, 2)} mi`],
+            ['Wave heads', `${formatNumber(position.travelBearing)}° (${compassPoint(position.travelBearing)})`],
             ['Wave crosses the row in', `${formatNumber(length / earthSpeed, 2)} s`]
         ];
         this.stats.innerHTML = stats.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('');
