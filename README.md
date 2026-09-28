@@ -22,16 +22,19 @@ The **Site** tab sets where the installation is and how it's laid out:
 - **Location**
   - **Burning Man**, Black Rock Desert, NV: playa with distant mountain ranges. Timed to the published 1,156 ft/s.
   - **Crissy Field**, San Francisco, CA: along the Golden Gate Promenade, aligned east–west. Timed to the latitude's surface speed (~1,207 ft/s). Real terrain covers the Presidio, Fort Point, the Marin Headlands, Alcatraz, Angel Island and Mt. Tamalpais, and the Golden Gate Bridge and its approaches are placed from OpenStreetMap. The lights follow the ground.
+- **Position**: where the row sits at the site. Crissy Field has two:
+  - **Airfield, parallel to the beach** (default): the line from the Sep 2026 site map, 37.80407° N, 122.46732° W to 37.80561° N, 122.45453° W. About 3,750 ft on a bearing of about 81°, with 46 lights at 83.33 ft.
+  - **Promenade, due east–west**: the original 30-light line along the Golden Gate Promenade.
 - **Spacing**: any value, with presets for 162 ft (Burning Man) and 83.33 ft (Crissy Field).
 - **Number of lights**: 2–120.
 - **Flash head height**: defaults to 10 ft.
 
-Switching location loads that site's default layout. The tab also shows the Earth's surface speed, the time between flashes, the row length, and how long the wave takes to cross the row.
+Switching location or position loads its default layout. The tab also shows the Earth's surface speed, the time between flashes, the row length, and how long the wave takes to cross the row.
 
 Layouts are saved in the URL so they can be shared, for example:
 
 ```
-?site=crissy-field&lights=30&spacing=83.33&height=10
+?site=crissy-field&position=along-beach&lights=46&spacing=83.33&height=10
 ```
 
 ## Controls
@@ -61,6 +64,7 @@ You can configure the simulation via URL parameters to share specific views and 
 
 ### Site and Layout
 - `site` - `burning-man` or `crissy-field`
+- `position` - `along-beach` or `promenade` at Crissy Field (`deep-playa` at Burning Man)
 - `lights`, `spacing`, `height` - Number of lights, spacing and flash head height in feet
   - Example: `?site=crissy-field&lights=30&spacing=83.33&height=10`
 

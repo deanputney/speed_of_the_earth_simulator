@@ -47,6 +47,10 @@ export class MinimapControls {
     }
 
     fitToInstallation() {
+        // Centered on the row
+        this.center.copy(this.installation.center);
+        this.minimapCamera.position.set(this.center.x, 3000, this.center.z);
+        this.minimapCamera.lookAt(this.center.x, 0, this.center.z);
         this.groundBounds = Math.max(3000, this.installation.length / 2 + 500);
         Object.assign(this.minimapCamera, {
             left: -this.groundBounds,
@@ -90,6 +94,7 @@ export class MinimapControls {
         // Position camera above the terrain looking straight down
         this.minimapCamera.position.set(0, 3000, 0);
         this.minimapCamera.lookAt(0, 0, 0);
+        this.center = new THREE.Vector3();
     }
 
     /**
@@ -221,12 +226,12 @@ export class MinimapControls {
         const y = -(e.offsetY / rect.height) * 2 + 1; // Flip Y
 
         // Convert NDC to world coordinates using ground bounds (matches camera bounds)
-        const worldX = x * this.groundBounds;
-        const worldZ = -y * this.groundBounds; // Negate for Z axis
+        const worldX = this.center.x + x * this.groundBounds;
+        const worldZ = this.center.z - y * this.groundBounds; // Negate for Z axis
 
         // Clamp to ground bounds
-        const clampedX = Math.max(-this.groundBounds, Math.min(this.groundBounds, worldX));
-        const clampedZ = Math.max(-this.groundBounds, Math.min(this.groundBounds, worldZ));
+        const clampedX = Math.max(this.center.x - this.groundBounds, Math.min(this.center.x + this.groundBounds, worldX));
+        const clampedZ = Math.max(this.center.z - this.groundBounds, Math.min(this.center.z + this.groundBounds, worldZ));
 
         // Update character position visually during drag
         this.character.position.x = clampedX;
@@ -263,12 +268,12 @@ export class MinimapControls {
         const y = -(e.offsetY / rect.height) * 2 + 1; // Flip Y
 
         // Convert NDC to world coordinates using ground bounds (matches camera bounds)
-        const worldX = x * this.groundBounds;
-        const worldZ = -y * this.groundBounds; // Negate for Z axis
+        const worldX = this.center.x + x * this.groundBounds;
+        const worldZ = this.center.z - y * this.groundBounds; // Negate for Z axis
 
         // Clamp to ground bounds
-        const clampedX = Math.max(-this.groundBounds, Math.min(this.groundBounds, worldX));
-        const clampedZ = Math.max(-this.groundBounds, Math.min(this.groundBounds, worldZ));
+        const clampedX = Math.max(this.center.x - this.groundBounds, Math.min(this.center.x + this.groundBounds, worldX));
+        const clampedZ = Math.max(this.center.z - this.groundBounds, Math.min(this.center.z + this.groundBounds, worldZ));
 
         // Teleport to clicked position
         this.teleportCamera(clampedX, clampedZ);
@@ -276,14 +281,14 @@ export class MinimapControls {
 
     /**
      * Teleport camera to specified world coordinates
-     * Camera will face the center (0, 0, 0) after teleportation
+     * Camera will face the center of the row after teleportation
      */
     teleportCamera(worldX, worldZ) {
         // Create new position at walking height
         const newPosition = new THREE.Vector3(worldX, 6, worldZ);
 
         // Calculate orientation to face center
-        const direction = new THREE.Vector3(0, 0, 0).sub(newPosition);
+        const direction = this.center.clone().sub(newPosition);
         direction.y = 0; // Only horizontal direction
         direction.normalize();
 
